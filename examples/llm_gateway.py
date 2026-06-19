@@ -6,11 +6,14 @@ Gemini / Qwen / Kimi, plus automatic retries and fallbacks. The agent already
 authenticates with your AssemblyAI key, so the Gateway reuses it — no second
 credential, nothing hardcoded. In a handler it's just ``ctx.llm``.
 
+The model is chosen per request, in the call — it's a response-generation
+decision, not agent config.
+
     export ASSEMBLYAI_API_KEY=...        # the only secret, from the environment
     python examples/llm_gateway.py
 
 Optional env:
-    LLM_GATEWAY_MODEL   default "claude-sonnet-4-6"   (or pass llm=... below)
+    LLM_GATEWAY_MODEL   model to use per request (default "claude-sonnet-4-6")
     LLM_GATEWAY_URL     default US; set to the EU base_url for EU data residency
 """
 
@@ -18,11 +21,12 @@ import os
 
 from assembly_agent import Agent, Reply
 
+MODEL = os.environ.get("LLM_GATEWAY_MODEL", "claude-sonnet-4-6")
+
 agent = Agent(
     name="Gateway Assistant",
     voice="ivy",
-    # The model is config; the key comes from ASSEMBLYAI_API_KEY automatically.
-    llm=os.environ.get("LLM_GATEWAY_MODEL", "claude-sonnet-4-6"),
+    # Config is identity + senses only. The key comes from ASSEMBLYAI_API_KEY.
     instructions=(
         "You are a warm, concise voice assistant. Speak in one or two short "
         "sentences. Never use lists or formatting — this is spoken aloud."
@@ -38,12 +42,13 @@ async def respond(ev, ctx):
     if ev.signals.emotion == "frustrated":
         return Reply("I hear you — let me help with that.", tone="reassuring", speed="slow")
 
-    # Answer the turn through the Gateway. ctx.llm already has the call history
-    # and the agent's instructions as the system prompt.
-    return await ctx.llm.complete()
+    # Answer the turn through the Gateway, picking the model per request.
+    # ctx.llm already has the call history and the agent's instructions as the
+    # system prompt.
+    return await ctx.llm.complete(model=MODEL)
 
     # Streaming variant (for models that support it), lower time-to-first-audio:
-    #   return ctx.llm.stream()
+    #   return ctx.llm.stream(model=MODEL)
 
 
 @agent.on_interrupt

@@ -158,27 +158,27 @@ authenticates with your AssemblyAI key, so the Gateway **reuses
 `ASSEMBLYAI_API_KEY`** — no second credential, nothing in code.
 
 ```python
-agent = Agent(name="Assistant", voice="ivy", llm="claude-sonnet-4-6",
-              instructions="Be warm and concise.")
+agent = Agent(name="Assistant", voice="ivy", instructions="Be warm and concise.")
 
 @agent.on_response
 async def respond(ev, ctx):
     if ev.signals.emotion == "frustrated":
         return Reply("I hear you.", tone="reassuring", speed="slow")
-    return await ctx.llm.complete()      # or: return ctx.llm.stream()
+    return await ctx.llm.complete(model="claude-sonnet-4-6")   # or ctx.llm.stream(model=...)
 ```
 
-`ctx.llm` already carries the call history and your `instructions` (as the
-system prompt), so `complete()` / `stream()` take no arguments for the common
-case. Pass `model=` or any Gateway param (e.g. `extra params`) through as
-kwargs. Swap regions with `llm_base_url=` (or `LLM_GATEWAY_URL`) for EU
-residency.
+The **model is chosen per request**, in the call — it's a response-generation
+decision, not agent config. Agent config stays about identity and senses (name,
+voice, instructions) plus connection (`api_key`, `llm_base_url` for EU
+residency). `ctx.llm` already carries the call history and your `instructions`
+(as the system prompt), so the only argument you usually pass is `model=`; any
+other Gateway param goes through as kwargs.
 
 **Managed default:** register *no* `on_response` and, as long as
 `ASSEMBLYAI_API_KEY` is set, every turn is answered through the Gateway
-automatically — the whole agent is a name, a voice, and a model
-(`examples/managed.py`). Add handlers when you outgrow it. If the Gateway errors,
-the turn falls back to passthrough.
+automatically with the default model — the whole agent is a name and a voice
+(`examples/managed.py`). Add an `on_response` to pick the model per turn. If the
+Gateway errors, the turn falls back to passthrough.
 
 ## Returning a response
 

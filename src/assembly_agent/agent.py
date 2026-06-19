@@ -41,7 +41,6 @@ class Agent:
         prompt: Optional[str] = None,
         model: Optional[str] = None,
         agent_id: Optional[str] = None,
-        llm: str = "claude-sonnet-4-6",
         llm_base_url: Optional[str] = None,
         api_key: Optional[str] = None,
     ) -> None:
@@ -54,8 +53,9 @@ class Agent:
         self.agent_id = agent_id or _slug(name)
         self.model = model or self.agent_id or _DEFAULT_MODEL
 
-        # LLM Gateway config — authenticates with ASSEMBLYAI_API_KEY by default.
-        self.llm_model = llm
+        # LLM Gateway connection only — auth (ASSEMBLYAI_API_KEY by default) and
+        # region. The *model* is chosen per request in ctx.llm.complete(model=…),
+        # not here: agent config is identity/senses, not response generation.
         self.llm_base_url = llm_base_url
         self.api_key = api_key
         self._gateway = None
@@ -72,9 +72,7 @@ class Agent:
         if self._gateway is None:
             from .gateway import Gateway
 
-            self._gateway = Gateway(
-                api_key=self.api_key, base_url=self.llm_base_url, model=self.llm_model
-            )
+            self._gateway = Gateway(api_key=self.api_key, base_url=self.llm_base_url)
         return self._gateway
 
     def has_gateway(self) -> bool:

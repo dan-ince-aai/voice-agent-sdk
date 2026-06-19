@@ -5,16 +5,17 @@ across Claude / GPT / Gemini / Qwen / Kimi, with automatic retries and
 fallbacks. Because the agent already authenticates with your AssemblyAI key,
 the Gateway needs no extra credential: it reuses ``ASSEMBLYAI_API_KEY``.
 
-In a handler it shows up as ``ctx.llm``:
+In a handler it shows up as ``ctx.llm``. The model is chosen per request —
+it's a response-generation decision, so it lives in the call, not the agent
+config:
 
     @agent.on_response
     async def respond(ev, ctx):
-        return await ctx.llm.complete()        # answer the turn with the Gateway
-        # or: return ctx.llm.stream()          # stream tokens to TTS
+        return await ctx.llm.complete(model="claude-sonnet-4-6")  # full reply
+        # or: return ctx.llm.stream(model="gpt-4o")               # stream to TTS
 
 And if you register no ``on_response`` at all, the agent falls back to the
-Gateway automatically (the "managed LLM" default) — so a useful voice agent is
-just a name, a voice, and a model.
+Gateway automatically (the "managed LLM" default), using ``DEFAULT_MODEL``.
 """
 
 from __future__ import annotations

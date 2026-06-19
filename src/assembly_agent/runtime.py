@@ -122,10 +122,13 @@ class Runtime:
         return await self._render(outcome, model=model, stream=stream)
 
     async def _augment(self, ctx) -> Any:
-        """Proxy a turn to the LLM Gateway. Falls back to passthrough (let the
-        voice layer's managed LLM handle it) if the Gateway errors."""
+        """Proxy a turn to the LLM Gateway with the default model (no handler
+        chose one). Falls back to passthrough — let the voice layer's managed
+        LLM handle it — if the Gateway errors."""
+        from .gateway import DEFAULT_MODEL
+
         try:
-            return await ctx.llm.complete()
+            return await ctx.llm.complete(model=DEFAULT_MODEL)
         except Exception as exc:  # noqa: BLE001
             import sys
 

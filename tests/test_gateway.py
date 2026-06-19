@@ -15,6 +15,7 @@ class FakeGateway:
         self.reply = reply
         self.tokens = tokens or ["can", "ned ", "answer"]
         self.seen = None
+        self.seen_model = None
 
     @property
     def configured(self):
@@ -22,10 +23,12 @@ class FakeGateway:
 
     async def complete(self, messages, *, model=None, **params):
         self.seen = messages
+        self.seen_model = model
         return self.reply
 
     async def stream(self, messages, *, model=None, **params):
         self.seen = messages
+        self.seen_model = model
         for t in self.tokens:
             yield t
 
@@ -62,6 +65,31 @@ def test_handler_uses_ctx_llm():
     assert r.json()["choices"][0]["message"]["content"] == "from the gateway"
     # the user turn made it into the messages sent to the gateway
     assert {"role": "user", "content": "hello"} in fake.seen
+
+
+def test_model_is_chosen_per_request():
+    agent = Agent(name="G")
+    fake = FakeGateway(reply="ok")
+    agent._gateway = fake
+
+    @agent.on_response
+    async def respond(ev, ctx):
+        return await ctx.llm.complete(model="gpt-4o")
+
+    client = TestClient(agent.app)
+    client.post("/v1/chat/completions", json={
+        "model": "g", "messages": [{"role": "user", "content": "hi"}],
+        "assemblyai": {"call_id": "a"},
+    })
+    assert fake.seen_model == "gpt-4o"
+
+
+def test_agent_takes_no_llm_model_config():
+    import pytest as _pytest
+
+    # The model is per-request now; the agent constructor must not accept `llm=`.
+    with _pytest.raises(TypeError):
+        Agent(name="X", llm="claude-sonnet-4-6")
 
 
 def test_managed_default_no_handler():

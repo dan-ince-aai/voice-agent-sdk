@@ -16,12 +16,13 @@ from assembly_agent import Agent
 agent = Agent(
     name="Managed Assistant",
     voice="ivy",
-    llm="claude-sonnet-4-6",
     instructions="You are a concise, friendly voice assistant. Keep replies short and spoken-natural.",
     greeting="Hi, how can I help?",
 )
 
-# That's it — no on_response. The Gateway handles every turn.
+# That's it — no on_response. The Gateway handles every turn using the default
+# model. To choose the model yourself, add an on_response and call
+# ctx.llm.complete(model=...) (see examples/llm_gateway.py).
 
 if __name__ == "__main__":
     if not os.environ.get("ASSEMBLYAI_API_KEY"):
