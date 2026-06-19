@@ -64,9 +64,11 @@ context `ctx`, and may be `async` or sync.
 @agent.on_call_start      # call connects, before anyone speaks → greet
 @agent.on_response        # every finalized user turn → return what to say
 @agent.on_interrupt       # caller cut in → ctx.cancel_pending()
+@agent.on_call_end        # call is over → clean up, save to CRM, fire a webhook
 ```
 
-Two more when you need them: `@agent.on_speaker_change`, `@agent.on_call_end`.
+One more when you need it: `@agent.on_speaker_change` (diarization changed —
+handoff, third party on the line).
 
 ### `ev` — what came in
 
@@ -90,6 +92,7 @@ Missing fields read back as `None`, so you can branch on them directly:
 | `ctx.history`                       | The running message list (`.role` / `.content`). |
 | `ctx.llm`                           | The LLM Gateway, bound to this call (below).   |
 | `ctx.transfer(name, reason=None)`   | Route the call to another agent.               |
+| `ctx.end(text="", reason=None)`     | Speak a goodbye, then hang up.                 |
 | `ctx.cancel_pending()`              | Drop in-flight work (on barge-in).             |
 | `await ctx.call_tool(name, **kw)`   | Run a registered tool.                          |
 
@@ -103,11 +106,32 @@ Missing fields read back as `None`, so you can branch on them directly:
 | `Reply(text, tone=, speed=, …)` | Same words, shaped delivery (`tone`, `speed`, `pitch`, `emphasis`, `pause`, `voice`). |
 | an async/sync generator         | Tokens streamed to TTS as they arrive (lower latency).       |
 | `ctx.transfer(...)`             | Hand the call to another agent.                              |
+| `ctx.end("Bye!")`               | Speak the goodbye, then end the call.                        |
 | `None`                          | You didn't write the reply — fall back to the LLM (see below). |
 
-The voice layer reads delivery, transfer, and fallback hints from an
+The voice layer reads delivery, transfer, end, and fallback hints from an
 `assemblyai` field on the response, alongside a standard OpenAI body — so any
 OpenAI client still gets valid output.
+
+### Ending the call
+
+Return `ctx.end(...)` to hang up. The goodbye is spoken, the session ends, and
+`on_call_end` fires for cleanup:
+
+```python
+@agent.on_response
+async def respond(ev, ctx):
+    if "goodbye" in ev.text.lower():
+        return ctx.end("Thanks for calling. Take care!")
+    return await ctx.llm.complete(model="claude-sonnet-4-6")
+
+@agent.on_call_end
+async def wrap_up(ev, ctx):
+    await crm.save(ctx.get("customer"), ctx.history)   # runs however the call ended
+```
+
+`on_call_end` fires whenever the call ends — your `ctx.end(...)`, the caller
+hanging up, or the line dropping — so it's the one place for cleanup.
 
 ---
 

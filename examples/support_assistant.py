@@ -49,6 +49,10 @@ async def greet(ev, ctx):
 
 @agent.on_response
 async def respond(ev, ctx):
+    # Say goodbye and hang up when they're done.
+    if any(w in ev.text.lower() for w in ("bye", "goodbye", "that's all", "thank you")):
+        return ctx.end("Glad I could help. Take care, goodbye.")
+
     # Language is detected per turn, so a mid-call switch is catchable.
     if ev.language and ev.language != "en":
         return ctx.transfer(f"support-{ev.language}")
@@ -71,6 +75,14 @@ async def respond(ev, ctx):
 async def stopped(ev, ctx):
     # They cut in — drop whatever we were doing.
     ctx.cancel_pending()
+
+
+@agent.on_call_end
+async def wrap_up(ev, ctx):
+    # Fires however the call ended (ctx.end, caller hung up, line dropped).
+    # Write back to the CRM here, fire a webhook, etc.
+    customer = ctx.get("customer")
+    print(f"call ended for {getattr(customer, 'first_name', 'unknown')}; {len(ctx.history)} turns")
 
 
 @agent.tool

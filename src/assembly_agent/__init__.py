@@ -7,7 +7,7 @@ barge-in, and the audio signals on every turn).
 """
 
 from .agent import Agent
-from .context import Context, Message, Transfer
+from .context import Context, EndCall, Message, Transfer
 from .events import Event
 from .gateway import Gateway, GatewayError
 from .reply import Reply
@@ -20,6 +20,7 @@ __all__ = [
     "Event",
     "Context",
     "Transfer",
+    "EndCall",
     "Message",
     "Signals",
     "Caller",

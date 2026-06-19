@@ -17,6 +17,8 @@ def build_agent():
             return Reply("I hear you.", tone="reassuring", speed="slow")
         if ev.text == "spanish":
             return ctx.transfer("support-es")
+        if ev.text == "bye":
+            return ctx.end("Take care, goodbye.")
         if ev.text == "augment":
             return None
         if ev.text == "remember":
@@ -84,6 +86,13 @@ def test_transfer(client):
     ext = r.json()["choices"][0]["assemblyai"]
     assert ext["action"] == "transfer"
     assert ext["transfer_to"] == "support-es"
+
+
+def test_end_call_speaks_goodbye_and_signals_end(client):
+    r = client.post("/v1/chat/completions", json=chat("bye"))
+    choice = r.json()["choices"][0]
+    assert choice["message"]["content"] == "Take care, goodbye."
+    assert choice["assemblyai"]["action"] == "end"
 
 
 def test_passthrough_on_none(client):

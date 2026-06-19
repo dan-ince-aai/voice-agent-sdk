@@ -33,6 +33,25 @@ class Transfer:
         return f"Transfer(agent_name={self.agent_name!r}, reason={self.reason!r})"
 
 
+class EndCall:
+    """Returned by ``ctx.end(...)`` to hang up. Any ``text`` is spoken first
+    (the goodbye), then the voice layer ends the session and fires
+    ``on_call_end``."""
+
+    def __init__(self, text: str = "", reason: Optional[str] = None) -> None:
+        self.text = text or ""
+        self.reason = reason
+
+    def to_dict(self) -> dict:
+        out: dict[str, Any] = {"action": "end"}
+        if self.reason:
+            out["reason"] = self.reason
+        return out
+
+    def __repr__(self) -> str:
+        return f"EndCall(text={self.text!r}, reason={self.reason!r})"
+
+
 class Message(_Bag):
     """One entry in ``ctx.history`` — ``.role`` and ``.content`` (plus any
     extra fields the request carried)."""
@@ -68,6 +87,11 @@ class Context:
     # --- routing & cancellation ---
     def transfer(self, agent_name: str, reason: Optional[str] = None) -> Transfer:
         return Transfer(agent_name, reason)
+
+    def end(self, text: str = "", reason: Optional[str] = None) -> EndCall:
+        """End the call. Return this from a handler: ``return ctx.end("Bye!")``.
+        The goodbye line is spoken, then the session ends."""
+        return EndCall(text, reason)
 
     def cancel_pending(self) -> None:
         """Mark in-flight work for this call as cancelled. Handlers can check

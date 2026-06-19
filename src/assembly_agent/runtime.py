@@ -16,7 +16,7 @@ import uuid
 from typing import Any, AsyncIterator, Optional
 
 from . import events as ev_mod
-from .context import Context, Message, Transfer
+from .context import Context, EndCall, Message, Transfer
 from .events import build_event, extract_enrichment, infer_event_type
 from .reply import Reply
 
@@ -148,6 +148,10 @@ class Runtime:
 
         if isinstance(result, Transfer):
             return Outcome(text="", extension=result.to_dict(), finish_reason="stop")
+
+        if isinstance(result, EndCall):
+            # Speak the goodbye (if any), then signal the voice layer to hang up.
+            return Outcome(text=result.text, extension=result.to_dict(), finish_reason="stop")
 
         if isinstance(result, Reply):
             return Outcome(text=result.text, delivery=result.delivery() or None)
