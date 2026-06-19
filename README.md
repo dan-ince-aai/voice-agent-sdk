@@ -200,6 +200,41 @@ brew install cloudflared        # one-time; without it serve() stays local
 
 ---
 
+## Connecting it to a voice agent (BYO LLM)
+
+The voice layer reaches the SDK through the agent record's `llm` config — point
+its `base_url` at the SDK and the voice layer calls it as a chat-completions
+endpoint:
+
+```json
+"llm": [{ "base_url": "https://abc.trycloudflare.com/v1", "model": "support-assistant", "api_key": "•••" }]
+```
+
+Let `serve()` wire it for you — it upserts the agent record to the current URL
+each run, so the ephemeral tunnel URL never has to be copied by hand:
+
+```python
+agent.serve(register=True)     # needs ASSEMBLYAI_API_KEY
+```
+
+Or do it explicitly: `agent.register("https://…/v1")`, or the `POST
+/v1/agents` curl directly.
+
+Two rules from the agent-record contract the SDK enforces for you:
+
+- **HTTPS, public-DNS host.** `register()` rejects `http://localhost` — use the
+  tunnel (`serve()`) or a deployed URL. The model and api_key must be non-empty.
+- **The `api_key` is a shared secret**, not your AssemblyAI key — it's what the
+  voice layer presents when calling the SDK. Set `Agent(..., ingress_key=...)`
+  (or let `register=True` generate one) and the server **rejects requests that
+  don't present it**, so your public URL isn't open to the world. It's
+  encrypted at rest and never returned on reads.
+
+The record's `model` is sent in each request's `model` field; your handler can
+use it or ignore it (the model you actually call is `ctx.llm.complete(model=…)`).
+
+---
+
 ## Examples
 
 | File                            | Shows                                                  |

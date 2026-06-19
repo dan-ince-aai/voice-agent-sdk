@@ -17,6 +17,8 @@ with an LLM, a decision tree, a lookup table, whatever you write.
 
 from __future__ import annotations
 
+import os
+import secrets
 import threading
 from typing import Any, Callable, Optional
 
@@ -42,6 +44,7 @@ class Agent:
         agent_id: Optional[str] = None,
         llm_base_url: Optional[str] = None,
         api_key: Optional[str] = None,
+        ingress_key: Optional[str] = None,
     ) -> None:
         self.name = name
         self.voice = voice
@@ -50,6 +53,12 @@ class Agent:
         # Stable id for upsert; falls back to a slug of the name.
         self.agent_id = agent_id or _slug(name)
         self.model = model or self.agent_id or _DEFAULT_MODEL
+
+        # Ingress secret: the `api_key` the voice layer presents when calling
+        # this SDK as the agent's BYO LLM endpoint. When set, the server rejects
+        # requests without it. Defaults to the env var if present.
+        self.ingress_key = ingress_key or os.environ.get("ASSEMBLY_AGENT_INGRESS_KEY")
+        self.remote_agent_id: Optional[str] = None
 
         # LLM Gateway connection only — auth (ASSEMBLYAI_API_KEY by default) and
         # region. The *model* is chosen per request in ctx.llm.complete(model=…),
@@ -151,6 +160,44 @@ class Agent:
             self._app = create_app(self)
         return self._app
 
+    def register(
+        self,
+        public_url: str,
+        *,
+        model: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        assemblyai_api_key: Optional[str] = None,
+        extra: Optional[dict] = None,
+    ) -> dict:
+        """Point an AssemblyAI agent record's BYO LLM endpoint at ``public_url``
+        (the SDK). Creates the record, or updates it when ``agent_id`` is given.
+
+        ``public_url`` must be HTTPS/public-DNS (a tunnel or deployed host —
+        localhost is rejected). If no ``ingress_key`` is set yet, one is
+        generated and stored on the record as the LLM ``api_key`` so the
+        endpoint isn't wide open. Returns the agent record (without the key)."""
+        from .registry import register_agent
+
+        if not self.ingress_key:
+            self.ingress_key = secrets.token_urlsafe(24)
+
+        key = assemblyai_api_key or self.api_key or os.environ.get("ASSEMBLYAI_API_KEY", "")
+        record = register_agent(
+            name=self.name,
+            voice=self.voice,
+            public_url=public_url,
+            model=model or self.model,
+            ingress_key=self.ingress_key,
+            assemblyai_api_key=key,
+            agent_id=agent_id or self.remote_agent_id,
+            greeting=self.greeting,
+            system_prompt=system_prompt,
+            extra=extra,
+        )
+        self.remote_agent_id = record.get("id", self.remote_agent_id)
+        return record
+
     def serve(
         self,
         host: str = "127.0.0.1",
@@ -158,6 +205,7 @@ class Agent:
         *,
         tunnel: bool = True,
         tunnel_provider: str = "auto",
+        register: bool = False,
         **uvicorn_kwargs: Any,
     ) -> None:
         """Run the OpenAI-compatible server (blocking).
@@ -167,6 +215,10 @@ class Agent:
         with no deploy — that's the point: run it and it's callable. Pass
         ``tunnel=False`` for a local-only endpoint (e.g. when you're deploying
         to a host that already has a public address).
+
+        ``register=True`` upserts the AssemblyAI agent record to point its BYO
+        LLM endpoint at the public URL once it's up (requires
+        ASSEMBLYAI_API_KEY).
         """
         import uvicorn
 
@@ -176,9 +228,9 @@ class Agent:
             uvicorn.run(self.app, host=host, port=port, **uvicorn_kwargs)
             return
 
-        self._serve_with_tunnel(host, port, tunnel_provider, uvicorn_kwargs)
+        self._serve_with_tunnel(host, port, tunnel_provider, register, uvicorn_kwargs)
 
-    def _serve_with_tunnel(self, host, port, provider, uvicorn_kwargs) -> None:
+    def _serve_with_tunnel(self, host, port, provider, register, uvicorn_kwargs) -> None:
         import time
 
         import uvicorn
@@ -203,6 +255,13 @@ class Agent:
             print(f"  The server is still running locally at http://localhost:{port}/v1\n")
         else:
             self._print_banner(f"{tun.url}/v1", public=True, via=tun.provider)
+            if register:
+                try:
+                    record = self.register(tun.url)
+                    print(f"  Registered agent record (id: {record.get('id')!r}); "
+                          f"voice layer will call this URL.\n")
+                except Exception as exc:  # noqa: BLE001
+                    print(f"  Registration failed: {exc}\n")
 
         try:
             while thread.is_alive():

@@ -11,6 +11,7 @@ Routes:
 
 from __future__ import annotations
 
+import hmac
 import time
 from typing import TYPE_CHECKING, AsyncIterator
 
@@ -23,8 +24,27 @@ if TYPE_CHECKING:
     from .agent import Agent
 
 
+def _authorized(agent: "Agent", request: Request) -> bool:
+    """When an ingress key is configured, the caller (the voice layer) must
+    present it — this is the ``api_key`` stored in the agent record's ``llm``
+    config. No key configured → open (dev convenience)."""
+    key = agent.ingress_key
+    if not key:
+        return True
+    got = request.headers.get("authorization", "")
+    if got.startswith("Bearer "):
+        got = got[len("Bearer "):]
+    return hmac.compare_digest(got.strip(), key)
+
+
 def create_app(agent: "Agent") -> Starlette:
     async def chat_completions(request: Request):
+        if not _authorized(agent, request):
+            return JSONResponse(
+                {"error": {"message": "Unauthorized", "type": "invalid_request_error",
+                           "code": "invalid_api_key"}},
+                status_code=401,
+            )
         body = await request.json()
         headers = {k.lower(): v for k, v in request.headers.items()}
         result = await agent.runtime.dispatch(body, headers)
