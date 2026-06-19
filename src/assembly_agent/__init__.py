@@ -10,6 +10,7 @@ from .agent import Agent
 from .context import Context, EndCall, Message, Transfer
 from .events import Event
 from .gateway import Gateway, GatewayError
+from .phones import PhoneError
 from .reply import Reply
 from .signals import Caller, Signals, Speaker, Turn
 from .tools import Tool
@@ -29,6 +30,7 @@ __all__ = [
     "Tool",
     "Gateway",
     "GatewayError",
+    "PhoneError",
 ]
 
 __version__ = "0.1.0"

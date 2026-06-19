@@ -243,6 +243,35 @@ use it or ignore it (the model you actually call is `ctx.llm.complete(model=…)
 
 ---
 
+## Phone numbers
+
+Give the agent a number to take calls on. These are explicit calls, never a side
+effect of `serve()` — buying a number costs money, so the SDK won't provision
+one behind your back. Methods need the agent to have a record (call `serve()` /
+`register()` first, or pass `agent_id=`).
+
+```python
+# Buy a fresh number and assign it to this agent in one call
+agent.buy_phone_number(country_code="US", area_code=415, label="Support line")
+
+# Bring your own (carrier SIP trunk), then assign
+agent.import_phone_number("+14155550132", "my-trunk.pstn.twilio.com")
+
+# Assign / re-assign / release a number you already own
+agent.assign_phone_number("+14155550132")
+agent.unassign_phone_number("+14155550132")
+agent.release_phone_number("+14155550132")
+
+agent.phone_numbers()        # list owned numbers
+```
+
+Incoming calls to an assigned number hit the agent — same handlers, just a phone
+instead of the browser playground. Under the hood these map to
+`/v1/phone-numbers` (buy + auto-assign), `/import`, `PUT /{number}/agent`, and
+list/release; the raw client is `assembly_agent.phones` if you want it directly.
+
+---
+
 ## Examples
 
 | File                            | Shows                                                  |
