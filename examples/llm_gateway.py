@@ -61,4 +61,7 @@ async def stopped(ev, ctx):
 if __name__ == "__main__":
     if not os.environ.get("ASSEMBLYAI_API_KEY"):
         print("Set ASSEMBLYAI_API_KEY first:  export ASSEMBLYAI_API_KEY=...")
+    # Add register=True to also wire this URL onto your AssemblyAI agent record
+    # (BYO LLM), so a real voice call routes here:
+    #   agent.serve(register=True)
     agent.serve()

@@ -26,4 +26,8 @@ agent = Agent(
 if __name__ == "__main__":
     if not os.environ.get("ASSEMBLYAI_API_KEY"):
         print("Set ASSEMBLYAI_API_KEY first:  export ASSEMBLYAI_API_KEY=...")
+    # serve() opens a public URL. Add register=True to also point your
+    # AssemblyAI agent's BYO LLM endpoint at it (updates the agent with this
+    # same name, with a freshly-rotated ingress key each run):
+    #   agent.serve(register=True)
     agent.serve()
