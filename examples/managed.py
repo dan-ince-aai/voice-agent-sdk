@@ -9,8 +9,6 @@ through the LLM Gateway automatically — name, voice, model, done. This is the
     python examples/managed.py
 """
 
-import os
-
 from assembly_agent import Agent
 
 agent = Agent(
@@ -24,10 +22,6 @@ agent = Agent(
 # call ctx.llm.complete(model=..., system=...) (see examples/llm_gateway.py).
 
 if __name__ == "__main__":
-    if not os.environ.get("ASSEMBLYAI_API_KEY"):
-        print("Set ASSEMBLYAI_API_KEY first:  export ASSEMBLYAI_API_KEY=...")
-    # serve() opens a public URL. Add register=True to also point your
-    # AssemblyAI agent's BYO LLM endpoint at it (updates the agent with this
-    # same name, with a freshly-rotated ingress key each run):
-    #   agent.serve(register=True)
+    # Opens a public URL and, with ASSEMBLYAI_API_KEY set, registers it on your
+    # agent record and prints a playground link to test in the browser.
     agent.serve()

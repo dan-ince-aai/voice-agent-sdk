@@ -30,6 +30,7 @@ from .tools import Tool, build_tool
 __all__ = ["Agent", "Reply"]
 
 _DEFAULT_MODEL = "assemblyai-agent"
+_PLAYGROUND_URL = "https://www.assemblyai.com/dashboard/playground/voice-agent"
 
 
 class Agent:
@@ -215,21 +216,17 @@ class Agent:
         *,
         tunnel: bool = True,
         tunnel_provider: str = "auto",
-        register: bool = False,
+        register: bool = True,
         agent_id: Optional[str] = None,
         **uvicorn_kwargs: Any,
     ) -> None:
         """Run the OpenAI-compatible server (blocking).
 
         By default this opens a public HTTPS URL (via ``cloudflared`` or
-        ``ngrok``) so the voice layer can reach a server running on your laptop
-        with no deploy — that's the point: run it and it's callable. Pass
-        ``tunnel=False`` for a local-only endpoint (e.g. when you're deploying
-        to a host that already has a public address).
-
-        ``register=True`` upserts the AssemblyAI agent record to point its BYO
-        LLM endpoint at the public URL once it's up (requires
-        ASSEMBLYAI_API_KEY).
+        ``ngrok``) and, if ``ASSEMBLYAI_API_KEY`` is set, wires that URL onto
+        your agent record and prints a playground link so you can test it in the
+        browser immediately. Pass ``tunnel=False`` for a local-only endpoint, or
+        ``register=False`` to skip touching the agent record.
         """
         import uvicorn
 
@@ -248,9 +245,15 @@ class Agent:
 
         from .tunnel import open_tunnel
 
+        # We only register (and lock the endpoint with a rotating key) when a
+        # key is actually available — otherwise a local dev run would lock its
+        # own endpoint with a secret nobody knows, breaking curl/call.py.
+        api_key = self.api_key or os.environ.get("ASSEMBLYAI_API_KEY")
+        will_register = register and bool(api_key)
+
         # Mint the rotating ingress key *before* the server starts, so the
-        # endpoint is never open — even in the window before registration.
-        if register and not self._ingress_explicit:
+        # endpoint is never open in the window before registration.
+        if will_register and not self._ingress_explicit:
             self.ingress_key = secrets.token_urlsafe(24)
 
         config = uvicorn.Config(self.app, host=host, port=port, log_level="warning", **uvicorn_kwargs)
@@ -271,14 +274,21 @@ class Agent:
             print(f"  The server is still running locally at http://localhost:{port}/v1\n")
         else:
             self._print_banner(f"{tun.url}/v1", public=True, via=tun.provider)
-            if register:
+            if will_register:
                 try:
                     # Key already minted above; don't rotate again here.
                     record = self.register(tun.url, agent_id=agent_id, rotate=False)
-                    print(f"  Agent record set (id: {record.get('id')!r}); the voice "
-                          f"layer will call this URL with a freshly-rotated key.\n")
+                    aid = record.get("id")
+                    if aid:
+                        print(f"  Agent id: {aid}")
+                        print(f"  Test it in your browser:\n    {_PLAYGROUND_URL}/{aid}\n")
+                    else:
+                        print("  Registered the agent record (no id returned).\n")
                 except Exception as exc:  # noqa: BLE001
-                    print(f"  Registration failed: {exc}\n")
+                    print(f"  Registration failed (serving anyway): {exc}\n")
+            elif register:
+                print("  Set ASSEMBLYAI_API_KEY to auto-register this URL on your agent "
+                      "and get a browser test link.\n")
 
         try:
             while thread.is_alive():

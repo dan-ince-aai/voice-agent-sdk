@@ -38,16 +38,19 @@ pip install -e .
 python examples/managed.py        # needs ASSEMBLYAI_API_KEY
 ```
 
-On start it prints a public URL:
+On start it opens a public URL, wires it onto your agent record, and prints a
+link to test in the browser right away:
 
 ```
   Public endpoint (via cloudflared): https://blue-forest-1234.trycloudflare.com/v1
-  Point your voice agent's LLM base_url here (model: 'managed-assistant').
+  Agent id: agent_abc123
+  Test it in your browser:
+    https://www.assemblyai.com/dashboard/playground/voice-agent/agent_abc123
 ```
 
-Paste that `…/v1` into your voice agent's LLM `base_url`, place a call, and it
-runs against the code on your machine. To try it without a voice call, talk to
-it from your terminal:
+Open that link and talk to it — the call runs against the code on your machine.
+(No `ASSEMBLYAI_API_KEY`? It still serves + tunnels; it just skips registering
+and the browser link.) Or test from your terminal without a voice call:
 
 ```sh
 python examples/call.py https://blue-forest-1234.trycloudflare.com/v1
@@ -210,20 +213,17 @@ endpoint:
 "llm": [{ "base_url": "https://abc.trycloudflare.com/v1", "model": "support-assistant", "api_key": "•••" }]
 ```
 
-Let `serve()` wire it for you — needs `ASSEMBLYAI_API_KEY`:
+`serve()` wires it for you **by default** (when `ASSEMBLYAI_API_KEY` is set) and
+prints the playground link. Each run it: mints a **fresh ingress key**, points
+the record's `base_url` at the current tunnel URL, and **updates the agent with
+the same name** — it lists your agents (`GET /v1/agents`), and if one already
+has this name it `PUT`s that record, otherwise it creates one. So the name is
+the identity; re-running just updates "the agent called X". You never copy the
+ephemeral URL or manage the secret by hand.
 
-```python
-agent.serve(register=True)
-```
-
-Each run it: mints a **fresh ingress key**, points the record's `base_url` at
-the current tunnel URL, and **updates the agent with the same name** — it lists
-your agents (`GET /v1/agents`), and if one already has this name it `PUT`s that
-record, otherwise it creates one. So the name is the identity; re-running just
-updates "the agent called X". You never copy the ephemeral URL or manage the
-secret by hand. Do it explicitly with `agent.register("https://…/v1")` (pass
-`agent_id=` to target a specific record, e.g. after a rename), or the
-`POST/PUT /v1/agents` curl.
+Pass `serve(register=False)` to skip it, `agent.register("https://…/v1")` to do
+it explicitly (with `agent_id=` to target a specific record, e.g. after a
+rename), or the `POST/PUT /v1/agents` curl.
 
 What the SDK handles for you, from the agent-record contract:
 
