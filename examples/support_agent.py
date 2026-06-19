@@ -7,7 +7,7 @@ Everything wired the way you'd actually ship it:
   • a backend lookup (order status) the handler does in plain code when needed
   • guardrails that run in *your* process: PII redaction + a refund-policy check
     (note: guardrails need the full reply, so this path uses complete(), not
-    streaming — see proxy_existing_agent.py for the low-latency streaming case)
+    streaming — see gateway_agent.py / byo_llm.py for the low-latency streaming case)
   • emotion-aware delivery (slow + reassuring when the caller is upset)
   • mid-call language hand-off to a localized agent
   • a clean spoken goodbye, then CRM write-back when the call ends

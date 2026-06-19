@@ -203,6 +203,16 @@ brew install cloudflared        # one-time; without it serve() stays local
 > Tunnel URLs are random and disappear when you stop the process. For a stable
 > address, deploy or use a named cloudflared tunnel.
 
+**Already have a web service?** `agent.app` is a plain ASGI app, so mount it
+next to your routes and run it in your own process — no separate deploy:
+
+```python
+app.mount("/voice", agent.app)          # FastAPI or Starlette; lives at /voice/v1
+```
+
+Then register that public URL once (`agent.register("https://your-host/voice")`
+or the CLI) instead of using `serve()`.
+
 ---
 
 ## Connecting it to a voice agent (BYO LLM)
@@ -290,13 +300,16 @@ For scripting, the raw ops are in `assembly_agent.phones` and
 
 ## Examples
 
-| File                            | Shows                                                  |
-| ------------------------------- | ------------------------------------------------------ |
-| `examples/support_agent.py`        | **Flagship.** Production support agent: CRM, your model, a backend lookup, guardrails, emotion-aware delivery, transfer, goodbye, CRM write-back, phone number. |
-| `examples/proxy_existing_agent.py` | Voice front-end over your existing text agent — reuse the brain, stream the reply, add voice reflexes. |
-| `examples/mounted.py`              | Mount the agent into your existing FastAPI/Starlette service (`app.mount("/voice", agent.app)`). |
-| `examples/ivr.py`                  | Deterministic **no-LLM** flow (refill line) with per-call state — auditable, zero model latency. |
-| `examples/call.py`                 | Terminal client to talk to any of them.                |
+One example per common pattern:
+
+| File                        | Pattern                                                          |
+| --------------------------- | ---------------------------------------------------------------- |
+| `examples/gateway_agent.py` | **LLM Gateway as your model** — `ctx.llm`, model + system per turn. |
+| `examples/byo_llm.py`       | **Your own LLM / LangChain workflow** — call your stack, add voice reflexes. |
+| `examples/rag.py`           | **Knowledge base (RAG) + Gateway** — retrieve, ground, answer.   |
+| `examples/ivr.py`           | **Deterministic, no LLM** — auditable state machine, zero model latency. |
+| `examples/support_agent.py` | **Flagship** — a production agent combining the above with CRM, guardrails, emotion-aware delivery, transfer, goodbye, phone number. |
+| `examples/call.py`          | Terminal client to talk to any of them.                          |
 
 Run tests with `pip install -e ".[dev]" && pytest`.
 
