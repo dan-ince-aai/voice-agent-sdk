@@ -107,36 +107,17 @@ class Runtime:
             outcome = Outcome(text="", finish_reason="stop")
             return await self._render(outcome, model=model, stream=stream)
 
-        # call_start / response produce a spoken turn.
+        # call_start / response produce a spoken turn. The SDK never generates
+        # implicitly — if you want the Gateway to answer, call ctx.llm in your
+        # handler. No handler (or a handler that returns None) → passthrough.
         result = None
         if handler is not None:
             result = await _maybe_await(handler(event, ctx))
         elif event_type == ev_mod.CALL_START and self.agent.greeting:
             result = self.agent.greeting
 
-        # A response turn that nobody produced — no on_response, or the handler
-        # returned None (intercepted only to add context / redact) — falls back
-        # to the managed LLM: the Gateway if a key is configured, otherwise
-        # passthrough to the voice layer. Same path either way.
-        if event_type == ev_mod.RESPONSE and result is None and self.agent.has_gateway():
-            result = await self._augment(ctx)
-
         outcome = self._normalize(result)
         return await self._render(outcome, model=model, stream=stream)
-
-    async def _augment(self, ctx) -> Any:
-        """Proxy a turn to the LLM Gateway with the default model (no handler
-        chose one). Falls back to passthrough — let the voice layer's managed
-        LLM handle it — if the Gateway errors."""
-        from .gateway import DEFAULT_MODEL
-
-        try:
-            return await ctx.llm.complete(model=DEFAULT_MODEL)
-        except Exception as exc:  # noqa: BLE001
-            import sys
-
-            print(f"[assembly_agent] Gateway augment failed, passing through: {exc}", file=sys.stderr)
-            return None
 
     # ------------------------------------------------------------------ #
     # normalize a handler return value

@@ -102,47 +102,33 @@ def test_agent_takes_no_llm_model_config():
         Agent(name="X", llm="claude-sonnet-4-6")
 
 
-def test_managed_default_no_handler():
-    # No on_response, but a Gateway key -> the turn is answered automatically.
-    agent = Agent(name="Managed")
-    agent._gateway = FakeGateway(reply="managed reply")
+def test_no_handler_is_passthrough_not_managed():
+    # With no on_response the SDK does NOT secretly proxy to the Gateway — a
+    # handler-less agent is pointless, so it just passes through.
+    agent = Agent(name="Bare")
+    agent._gateway = FakeGateway(reply="should not be used")
 
     client = TestClient(agent.app)
     r = client.post("/v1/chat/completions", json={
         "model": "m", "messages": [{"role": "user", "content": "hi"}],
         "assemblyai": {"call_id": "a"},
     })
-    assert r.json()["choices"][0]["message"]["content"] == "managed reply"
+    assert r.json()["choices"][0]["assemblyai"]["action"] == "passthrough"
 
 
-def test_handler_returning_none_falls_back_to_gateway():
-    # Returning None == "I didn't generate the reply" -> same as no handler:
-    # the Gateway answers (augment), not a passthrough signal.
+def test_handler_returning_none_is_passthrough_even_with_gateway():
+    # Returning None never implicitly calls the Gateway — it's passthrough.
+    # To have the Gateway answer, the handler returns ctx.llm.complete().
     agent = Agent(name="Aug")
-    agent._gateway = FakeGateway(reply="gateway wrote this")
+    agent._gateway = FakeGateway(reply="should not be used")
 
     @agent.on_response
     async def respond(ev, ctx):
-        ctx.history.append(type("M", (), {"role": "system", "content": "extra context"})())
-        return None  # intercepted only to add context
+        return None
 
     client = TestClient(agent.app)
     r = client.post("/v1/chat/completions", json={
         "model": "a", "messages": [{"role": "user", "content": "hi"}],
-        "assemblyai": {"call_id": "a"},
-    })
-    assert r.json()["choices"][0]["message"]["content"] == "gateway wrote this"
-
-
-def test_no_gateway_no_handler_is_passthrough():
-    # No key -> not configured -> passthrough (managed LLM on the voice side).
-    agent = Agent(name="Bare", api_key="")
-    # Force an unconfigured gateway regardless of environment.
-    agent._gateway = Gateway(api_key="")
-
-    client = TestClient(agent.app)
-    r = client.post("/v1/chat/completions", json={
-        "model": "b", "messages": [{"role": "user", "content": "hi"}],
         "assemblyai": {"call_id": "a"},
     })
     choice = r.json()["choices"][0]

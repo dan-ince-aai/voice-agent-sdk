@@ -90,10 +90,6 @@ class Agent:
             self._gateway = Gateway(api_key=self.api_key, base_url=self.llm_base_url)
         return self._gateway
 
-    def has_gateway(self) -> bool:
-        """True when a Gateway key is available (env or constructor)."""
-        return self.gateway.configured
-
     # ------------------------------------------------------------------ #
     # handler registration (decorators)
     # ------------------------------------------------------------------ #

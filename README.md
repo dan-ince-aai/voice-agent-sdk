@@ -35,7 +35,7 @@ route, parse the schema, or touch a socket.
 
 ```sh
 pip install -e .
-python examples/managed.py        # needs ASSEMBLYAI_API_KEY
+python examples/support_agent.py        # needs ASSEMBLYAI_API_KEY
 ```
 
 On start it opens a public URL, wires it onto your agent record, and prints a
@@ -109,11 +109,13 @@ Missing fields read back as `None`, so you can branch on them directly:
 | an async/sync generator         | Tokens streamed to TTS as they arrive (lower latency).       |
 | `ctx.transfer(...)`             | Hand the call to another agent.                              |
 | `ctx.end("Bye!")`               | Speak the goodbye, then end the call.                        |
-| `None`                          | You didn't write the reply — fall back to the LLM (see below). |
+| `None`                          | Passthrough — you chose not to answer; the voice layer handles it. (Want the Gateway to write it? Call `ctx.llm` and return that.) |
 
-The voice layer reads delivery, transfer, end, and fallback hints from an
-`assemblyai` field on the response, alongside a standard OpenAI body — so any
-OpenAI client still gets valid output.
+The SDK never generates a reply implicitly — there's no "managed mode" where a
+handler-less agent secretly proxies to an LLM. If you're not writing logic, you
+don't need the SDK. The voice layer reads delivery, transfer, end, and
+passthrough hints from an `assemblyai` field on the response, alongside a
+standard OpenAI body — so any OpenAI client still gets valid output.
 
 ### Ending the call
 
@@ -156,12 +158,10 @@ prompt per call** — both are response-generation decisions, so they live in yo
 handler, not in the agent config. (Agent config is identity and senses only:
 name, voice, greeting, TTS `prompt`, plus `api_key` / `llm_base_url` for EU.)
 
-**No handler? It still works.** With `ASSEMBLYAI_API_KEY` set and no
-`on_response`, every turn is answered through the Gateway automatically — the
-whole agent is a name and a voice (`examples/managed.py`). Returning `None` from
-a handler does the same thing, after you've added context or redacted: the
-Gateway writes the words, or the turn passes through to the voice layer's LLM if
-no key is set.
+Using it is always explicit — `ctx.llm` is a tool you reach for inside a
+handler, not something the SDK invokes for you. (If you don't want to write a
+handler at all, you don't need this SDK — that's just a system prompt + a
+managed LLM on the agent record.)
 
 ---
 
@@ -292,7 +292,6 @@ For scripting, the raw ops are in `assembly_agent.phones` and
 
 | File                            | Shows                                                  |
 | ------------------------------- | ------------------------------------------------------ |
-| `examples/managed.py`              | Simplest start — no handlers, the Gateway answers every turn. |
 | `examples/support_agent.py`        | **Flagship.** Production support agent: CRM, your model, a backend lookup, guardrails, emotion-aware delivery, transfer, goodbye, CRM write-back, phone number. |
 | `examples/proxy_existing_agent.py` | Voice front-end over your existing text agent — reuse the brain, stream the reply, add voice reflexes. |
 | `examples/mounted.py`              | Mount the agent into your existing FastAPI/Starlette service (`app.mount("/voice", agent.app)`). |
