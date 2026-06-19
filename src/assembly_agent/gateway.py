@@ -157,10 +157,18 @@ class CallLLM:
         has_system = any(self._role_content(m)[0] == "system" for m in self._history)
         if system and not has_system:
             msgs.append({"role": "system", "content": system})
+        seen_user = False
         for m in self._history:
             role, content = self._role_content(m)
-            if role in ("system", "user", "assistant") and content:
-                msgs.append({"role": role, "content": content if isinstance(content, str) else str(content)})
+            if role not in ("system", "user", "assistant") or not content:
+                continue
+            # Drop a leading assistant turn (e.g. the greeting) — models expect
+            # the conversation to start with the user after the system prompt.
+            if role == "assistant" and not seen_user:
+                continue
+            if role == "user":
+                seen_user = True
+            msgs.append({"role": role, "content": content if isinstance(content, str) else str(content)})
         return msgs
 
     async def complete(self, *, model: Optional[str] = None, system: Optional[str] = None, **params: Any) -> str:

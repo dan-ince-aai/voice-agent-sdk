@@ -52,6 +52,7 @@ class Outcome:
         self.delivery = delivery
         self.extension = extension  # full choice-level `assemblyai` blob
         self.finish_reason = finish_reason
+        self.on_done = None  # called with the final spoken text (to record history)
 
     @property
     def streaming(self) -> bool:
@@ -90,8 +91,27 @@ class Runtime:
         event = build_event(body, enrichment, event_type)
 
         store = self.agent.store_for(call_id)
-        history = [Message(m if isinstance(m, dict) else dict(m)) for m in (body.get("messages") or [])]
+
+        # The SDK owns the conversation per call_id, so ctx.llm has the full
+        # history whether the voice layer sends the whole transcript each turn or
+        # just the latest one. Seed from the request on the first turn; after
+        # that, append only the new user turn and (below) each assistant reply.
+        hist = store.setdefault("_history", [])
+        if not hist:
+            for m in body.get("messages") or []:
+                role = m.get("role") if isinstance(m, dict) else getattr(m, "role", None)
+                content = m.get("content") if isinstance(m, dict) else getattr(m, "content", None)
+                if role in ("system", "user", "assistant") and content:
+                    hist.append({"role": role, "content": content})
+        elif event_type == ev_mod.RESPONSE and event.text:
+            hist.append({"role": "user", "content": event.text})
+
+        history = [Message(m) for m in hist]
         ctx = Context(call_id, store, history, self.agent)
+
+        def remember(text: str) -> None:
+            if text and event_type in (ev_mod.RESPONSE, ev_mod.CALL_START):
+                hist.append({"role": "assistant", "content": text})
 
         handler = self.agent.handler_for(event_type)
         model = body.get("model") or self.agent.model
@@ -117,6 +137,7 @@ class Runtime:
             result = self.agent.greeting
 
         outcome = self._normalize(result)
+        outcome.on_done = remember
         return await self._render(outcome, model=model, stream=stream)
 
     # ------------------------------------------------------------------ #
@@ -174,6 +195,7 @@ class Runtime:
         return await self._render_full(outcome, model=model)
 
     async def _render_full(self, outcome: Outcome, *, model: str) -> dict:
+        on_done = outcome.on_done
         if outcome.streaming:
             # Caller wants a single body but the handler streamed: collect it.
             parts = []
@@ -185,6 +207,9 @@ class Runtime:
                 extension=outcome.extension,
                 finish_reason=outcome.finish_reason,
             )
+
+        if on_done:
+            on_done(outcome.text)
 
         message: dict[str, Any] = {"role": "assistant", "content": outcome.text}
         ext = outcome.choice_extension()
@@ -228,12 +253,18 @@ class Runtime:
         # extension up front so the voice layer can shape delivery from token 0).
         yield chunk({"role": "assistant", "content": ""}, assemblyai=ext)
 
+        parts = []
         if outcome.streaming:
             async for tok in outcome.token_iter:  # type: ignore[union-attr]
                 if tok:
+                    parts.append(tok)
                     yield chunk({"content": tok})
         elif outcome.text:
+            parts.append(outcome.text)
             yield chunk({"content": outcome.text})
+
+        if outcome.on_done:
+            outcome.on_done("".join(parts))
 
         yield chunk({}, finish_reason=outcome.finish_reason, assemblyai=ext)
         yield "data: [DONE]\n\n"
