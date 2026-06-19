@@ -42,10 +42,12 @@ class Agent:
         prompt: Optional[str] = None,
         model: Optional[str] = None,
         agent_id: Optional[str] = None,
-        llm_base_url: Optional[str] = None,
+        region: Optional[str] = None,
         api_key: Optional[str] = None,
         ingress_key: Optional[str] = None,
         phone_number: Optional[str] = None,
+        llm_base_url: Optional[str] = None,
+        api_base: Optional[str] = None,
     ) -> None:
         self.name = name
         self.voice = voice
@@ -69,10 +71,12 @@ class Agent:
         self._ingress_explicit = provided is not None
         self.remote_agent_id: Optional[str] = None
 
-        # LLM Gateway connection only — auth (ASSEMBLYAI_API_KEY by default) and
-        # region. The *model* is chosen per request in ctx.llm.complete(model=…),
-        # not here: agent config is identity/senses, not response generation.
-        self.llm_base_url = llm_base_url
+        # Region picks both the agents REST endpoint and the LLM Gateway. US by
+        # default; "eu" switches both to the EU endpoints. (llm_base_url / api_base
+        # are advanced per-endpoint overrides.)
+        self.region = (region or os.environ.get("ASSEMBLY_AGENT_REGION") or "us").lower()
+        self._llm_base_url = llm_base_url
+        self._api_base = api_base
         self.api_key = api_key
         self._gateway = None
 
@@ -80,6 +84,20 @@ class Agent:
         self._stores: dict[str, dict] = {}
         self.runtime = Runtime(self)
         self._app = None
+
+    @property
+    def llm_base_url(self) -> str:
+        """LLM Gateway endpoint for this agent's region (or an explicit override)."""
+        from .endpoints import llm_base
+
+        return self._llm_base_url or os.environ.get("LLM_GATEWAY_URL") or llm_base(self.region)
+
+    @property
+    def api_base(self) -> str:
+        """Agents REST endpoint for this agent's region (or an explicit override)."""
+        from .endpoints import agents_base
+
+        return self._api_base or agents_base(self.region)
 
     @property
     def gateway(self):
@@ -109,9 +127,6 @@ class Agent:
     # `on_interruption` kept as an alias for the longer name.
     def on_interruption(self, fn: Callable) -> Callable:
         return self.on_interrupt(fn)
-
-    def on_speaker_change(self, fn: Callable) -> Callable:
-        return self._register(ev_mod.SPEAKER_CHANGE, fn)
 
     def on_call_end(self, fn: Callable) -> Callable:
         return self._register(ev_mod.CALL_END, fn)
@@ -182,6 +197,7 @@ class Agent:
             greeting=self.greeting,
             system_prompt=system_prompt,
             extra=extra,
+            api_base=self.api_base,
         )
         self.remote_agent_id = record.get("id") or agent_id or self.remote_agent_id
         return record
