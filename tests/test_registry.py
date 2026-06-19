@@ -199,22 +199,10 @@ def test_register_rotates_key_each_call(monkeypatch):
     assert calls[0]["ingress_key"] != calls[1]["ingress_key"]  # fresh key each time
 
 
-def test_explicit_key_is_not_rotated(monkeypatch):
-    calls = []
-    monkeypatch.setattr("assembly_agent.registry.register_agent",
-                        lambda **kw: calls.append(kw) or {"id": "agent_x"})
-
-    agent = Agent(name="Fixed", ingress_key="my-fixed-key")
-    agent.register("https://x.trycloudflare.com", assemblyai_api_key="aai")
-    agent.register("https://x.trycloudflare.com", assemblyai_api_key="aai")
-
-    assert calls[0]["ingress_key"] == "my-fixed-key"
-    assert calls[1]["ingress_key"] == "my-fixed-key"
-
-
 # --- server-side ingress auth -------------------------------------------- #
 def _client(ingress_key):
-    agent = Agent(name="Auth", ingress_key=ingress_key)
+    agent = Agent(name="Auth")
+    agent.ingress_key = ingress_key   # auto-set on registration; set directly for the test
 
     @agent.on_response
     async def respond(ev, ctx):

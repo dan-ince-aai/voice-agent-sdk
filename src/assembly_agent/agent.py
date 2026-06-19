@@ -44,7 +44,6 @@ class Agent:
         agent_id: Optional[str] = None,
         region: Optional[str] = None,
         api_key: Optional[str] = None,
-        ingress_key: Optional[str] = None,
         phone_number: Optional[str] = None,
         llm_base_url: Optional[str] = None,
         api_base: Optional[str] = None,
@@ -62,13 +61,10 @@ class Agent:
         # ever handle the number; the agent id is resolved internally.
         self.phone_number = phone_number or os.environ.get("ASSEMBLY_AGENT_PHONE_NUMBER")
 
-        # Ingress secret: the `api_key` the voice layer presents when calling
-        # this SDK as the agent's BYO LLM endpoint. When set, the server rejects
-        # requests without it. An explicit key (constructor or env) is kept as-is;
-        # otherwise a fresh one is minted on each registration.
-        provided = ingress_key or os.environ.get("ASSEMBLY_AGENT_INGRESS_KEY")
-        self.ingress_key = provided
-        self._ingress_explicit = provided is not None
+        # Shared secret the voice layer presents when calling this endpoint.
+        # Auto-rotated on every registration; the server rejects requests that
+        # don't present the current one. Not user-configurable.
+        self.ingress_key: Optional[str] = None
         self.remote_agent_id: Optional[str] = None
 
         # Region picks both the agents REST endpoint and the LLM Gateway. US by
@@ -170,19 +166,16 @@ class Agent:
         """Point an AssemblyAI agent record's BYO LLM endpoint at ``public_url``
         (the SDK), and return the record.
 
-        ``public_url`` must be HTTPS/public-DNS (a tunnel or deployed host —
-        localhost is rejected). Unless you set an explicit ``ingress_key``, a
-        fresh shared secret is minted here (``rotate=True``) and written to the
-        record as the LLM ``api_key`` — a new key per registration.
+        ``public_url`` must be HTTPS/public-DNS (a tunnel or deployed host;
+        localhost is rejected). A fresh shared secret is minted here and written
+        to the record as the LLM ``api_key`` (a new key per registration).
 
         The record is identified by **name**: if an agent with this name already
         exists it's updated (PUT), otherwise one is created (POST). Pass
         ``agent_id`` to target a specific record instead."""
         from .registry import register_agent
 
-        if self._ingress_explicit:
-            pass  # respect the user's key, never rotate it
-        elif rotate or not self.ingress_key:
+        if rotate or not self.ingress_key:
             self.ingress_key = secrets.token_urlsafe(24)
 
         key = assemblyai_api_key or self.api_key or os.environ.get("ASSEMBLYAI_API_KEY", "")
@@ -240,7 +233,7 @@ class Agent:
 
         # Mint the rotating ingress key before serving, so the endpoint is never
         # open in the window before registration.
-        if will_register and not self._ingress_explicit:
+        if will_register:
             self.ingress_key = secrets.token_urlsafe(24)
 
         config = uvicorn.Config(self.app, host=host, port=port, log_level="warning", **uvicorn_kwargs)
