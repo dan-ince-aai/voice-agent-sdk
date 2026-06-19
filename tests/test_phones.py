@@ -8,7 +8,6 @@ from starlette.applications import Starlette
 from starlette.responses import JSONResponse, Response
 from starlette.routing import Route
 
-from assembly_agent import Agent
 from assembly_agent.phones import (
     PhoneError,
     assign_number,
@@ -148,29 +147,45 @@ def test_requires_api_key():
         buy_number(assemblyai_api_key="", country_code="US")
 
 
-# --- Agent methods (monkeypatched, no network) --------------------------- #
-def test_agent_buy_uses_registered_id(monkeypatch):
+# --- CLI (monkeypatched, no network) ------------------------------------- #
+def test_cli_buy_resolves_agent_name_to_id(monkeypatch):
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "aai")
+    monkeypatch.setattr("assembly_agent.registry.list_agents",
+                        lambda **kw: [{"name": "Support", "id": "agent_777"}])
     seen = {}
     monkeypatch.setattr("assembly_agent.phones.buy_number",
                         lambda **kw: seen.update(kw) or {"phone_number": "+1..."})
-    agent = Agent(name="P")
-    agent.remote_agent_id = "agent_999"  # as if registered
-    agent.buy_phone_number(area_code=415, assemblyai_api_key="aai")
-    assert seen["agent_id"] == "agent_999"
+
+    from assembly_agent.cli import main
+    main(["phone", "buy", "--agent", "Support", "--area-code", "415"])
+
+    assert seen["agent_id"] == "agent_777"   # name → id resolved
     assert seen["area_code"] == 415
 
 
-def test_agent_buy_requires_registration_when_assigning(monkeypatch):
+def test_cli_buy_unknown_agent_exits(monkeypatch):
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "aai")
+    monkeypatch.setattr("assembly_agent.registry.list_agents", lambda **kw: [])
     monkeypatch.setattr("assembly_agent.phones.buy_number", lambda **kw: {})
-    agent = Agent(name="P")  # no remote_agent_id
-    with pytest.raises(RuntimeError):
-        agent.buy_phone_number(area_code=415, assemblyai_api_key="aai")
+
+    from assembly_agent.cli import main
+    with pytest.raises(SystemExit):
+        main(["phone", "buy", "--agent", "Nope"])
 
 
-def test_agent_buy_without_assign_needs_no_id(monkeypatch):
+def test_cli_assign_with_agent_id(monkeypatch):
+    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "aai")
     seen = {}
-    monkeypatch.setattr("assembly_agent.phones.buy_number",
-                        lambda **kw: seen.update(kw) or {})
-    agent = Agent(name="P")
-    agent.buy_phone_number(assign=False, assemblyai_api_key="aai")
-    assert seen["agent_id"] is None
+    monkeypatch.setattr("assembly_agent.phones.assign_number",
+                        lambda number, agent_id, **kw: seen.update(number=number, agent_id=agent_id))
+
+    from assembly_agent.cli import main
+    main(["phone", "assign", "+14155550100", "--agent-id", "agent_42"])
+    assert seen == {"number": "+14155550100", "agent_id": "agent_42"}
+
+
+def test_cli_missing_key_exits(monkeypatch):
+    monkeypatch.delenv("ASSEMBLYAI_API_KEY", raising=False)
+    from assembly_agent.cli import main
+    with pytest.raises(SystemExit):
+        main(["phone", "list"])

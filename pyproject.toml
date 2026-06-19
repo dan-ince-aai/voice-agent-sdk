@@ -19,6 +19,9 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["pytest>=7", "httpx>=0.24"]
 
+[project.scripts]
+assembly-agent = "assembly_agent.cli:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
 include = ["assembly_agent*"]

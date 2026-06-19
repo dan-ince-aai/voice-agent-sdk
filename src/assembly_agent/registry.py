@@ -84,6 +84,20 @@ def find_agent_id_by_name(client, name: str, api_base: str, headers: dict) -> Op
     return None
 
 
+def list_agents(*, assemblyai_api_key: str, api_base: str = DEFAULT_API_BASE,
+                timeout: float = 30.0) -> list:
+    """List the account's agents."""
+    import httpx
+
+    if not assemblyai_api_key:
+        raise RegistrationError("ASSEMBLYAI_API_KEY is required.")
+    with httpx.Client(timeout=timeout) as client:
+        resp = client.get(f"{api_base}/agents", headers={"Authorization": assemblyai_api_key})
+    if resp.status_code >= 400:
+        raise RegistrationError(f"list agents failed {resp.status_code}: {resp.text}")
+    return _agent_list(resp.json())
+
+
 def _managed_fields(
     name: str,
     voice: str,
