@@ -245,37 +245,44 @@ use it or ignore it (the model you actually call is `ctx.llm.complete(model=…)
 
 ## Phone numbers
 
-Give the agent a number to take calls on. This is **one-time provisioning**, so
-it's a CLI command — not code in `agent.py` (which you restart constantly; you
-don't want to buy a number on every boot). You do it once; the number stays
-bound to the agent across all your iterations.
+Give the agent a number to take calls on. **Buying** is one-time and costs
+money, so it's a CLI command. **Assigning** is free and idempotent, so the SDK
+does it at boot — you only ever handle the number, never the agent id.
+
+The flow:
 
 ```sh
+# 1. Build and test your agent first (browser playground link from serve()):
+python agent.py
+
+# 2. Once, buy a number (no --agent — assignment happens in code):
 export ASSEMBLYAI_API_KEY=...
+assembly-agent phone buy --area-code 415 --label "Support line"
+#   → +14155550100
+```
 
-# Buy a number and assign it to your agent (by name), in one command
-assembly-agent phone buy --agent "Support Assistant" --area-code 415 --label "Support line"
+```python
+# 3. Drop that number into your agent. serve() assigns it each boot.
+agent = Agent(name="Support Assistant", voice="ivy", phone_number="+14155550100")
+# (or agent.serve(phone_number="+14155550100"), or ASSEMBLY_AGENT_PHONE_NUMBER)
+```
 
-# Bring your own number (carrier SIP trunk)
-assembly-agent phone import +14155550132 --trunk my-trunk.pstn.twilio.com --agent "Support Assistant"
+Now `python agent.py` registers the agent (getting its id), then binds
+`+14155550100` to it — calls to that number hit the agent, same handlers, just a
+phone instead of the playground. Re-assigning the same number every restart is a
+no-op, so it's safe in the boot path; the number stays put while you iterate.
 
-# Assign / re-assign / un-assign / release
-assembly-agent phone assign   +14155550132 --agent "Support Assistant"
-assembly-agent phone unassign +14155550132
-assembly-agent phone release  +14155550132
+Other one-time CLI commands:
 
+```sh
+assembly-agent phone import +14155550132 --trunk my-trunk.pstn.twilio.com  # BYO trunk
 assembly-agent phone list           # owned numbers
+assembly-agent phone release +14155550100
 assembly-agent agents list          # agents (name → id)
 ```
 
-Target the agent by `--agent "<name>"` or `--agent-id <id>`. Incoming calls to
-an assigned number hit the agent — same handlers, just a phone instead of the
-browser playground. Because the number is bound to the agent record (which
-keeps a stable id across `serve()` restarts), you provision once and then
-iterate on `agent.py` freely.
-
-For scripting, the same operations are in `assembly_agent.phones` (and
-`assembly_agent.registry.list_agents`).
+For scripting, the raw ops are in `assembly_agent.phones` and
+`assembly_agent.registry`.
 
 ---
 

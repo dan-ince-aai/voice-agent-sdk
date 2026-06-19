@@ -46,6 +46,7 @@ class Agent:
         llm_base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         ingress_key: Optional[str] = None,
+        phone_number: Optional[str] = None,
     ) -> None:
         self.name = name
         self.voice = voice
@@ -54,6 +55,11 @@ class Agent:
         # Stable id for upsert; falls back to a slug of the name.
         self.agent_id = agent_id or _slug(name)
         self.model = model or self.agent_id or _DEFAULT_MODEL
+
+        # A number you already bought (via the CLI). serve() assigns it to this
+        # agent at boot — free and idempotent, so it's safe every run. You only
+        # ever handle the number; the agent id is resolved internally.
+        self.phone_number = phone_number or os.environ.get("ASSEMBLY_AGENT_PHONE_NUMBER")
 
         # Ingress secret: the `api_key` the voice layer presents when calling
         # this SDK as the agent's BYO LLM endpoint. When set, the server rejects
@@ -209,6 +215,15 @@ class Agent:
         self.remote_agent_id = record.get("id") or agent_id or self.remote_agent_id
         return record
 
+    def _wire_phone(self, number: str, api_key: str) -> None:
+        """Bind an already-owned number to this (registered) agent — Option D.
+        Idempotent; safe to run every serve."""
+        from .phones import assign_number
+
+        if not self.remote_agent_id:
+            raise RuntimeError("agent not registered yet — can't assign a number.")
+        assign_number(number, self.remote_agent_id, assemblyai_api_key=api_key)
+
     def serve(
         self,
         host: str = "127.0.0.1",
@@ -218,6 +233,7 @@ class Agent:
         tunnel_provider: str = "auto",
         register: bool = True,
         agent_id: Optional[str] = None,
+        phone_number: Optional[str] = None,
         **uvicorn_kwargs: Any,
     ) -> None:
         """Run the OpenAI-compatible server (blocking).
@@ -227,6 +243,10 @@ class Agent:
         your agent record and prints a playground link so you can test it in the
         browser immediately. Pass ``tunnel=False`` for a local-only endpoint, or
         ``register=False`` to skip touching the agent record.
+
+        ``phone_number`` (or ``Agent(phone_number=…)``) assigns an
+        already-purchased number to this agent at boot — buy it once with the
+        ``assembly-agent phone buy`` CLI, then drop the number here.
         """
         import uvicorn
 
@@ -236,9 +256,10 @@ class Agent:
             uvicorn.run(self.app, host=host, port=port, **uvicorn_kwargs)
             return
 
-        self._serve_with_tunnel(host, port, tunnel_provider, register, agent_id, uvicorn_kwargs)
+        self._serve_with_tunnel(host, port, tunnel_provider, register, agent_id,
+                                phone_number or self.phone_number, uvicorn_kwargs)
 
-    def _serve_with_tunnel(self, host, port, provider, register, agent_id, uvicorn_kwargs) -> None:
+    def _serve_with_tunnel(self, host, port, provider, register, agent_id, phone_number, uvicorn_kwargs) -> None:
         import time
 
         import uvicorn
@@ -284,6 +305,14 @@ class Agent:
                         print(f"  Test it in your browser:\n    {_PLAYGROUND_URL}/{aid}\n")
                     else:
                         print("  Registered the agent record (no id returned).\n")
+                    # Now that the agent has an id, bind the phone number to it.
+                    if phone_number and self.remote_agent_id:
+                        try:
+                            self._wire_phone(phone_number, api_key)
+                            print(f"  Phone: calls to {phone_number} now reach this agent.\n")
+                        except Exception as exc:  # noqa: BLE001
+                            print(f"  Could not assign {phone_number} — is it purchased? "
+                                  f"Run: assembly-agent phone buy ...\n    ({exc})\n")
                 except Exception as exc:  # noqa: BLE001
                     print(f"  Registration failed (serving anyway): {exc}\n")
             elif register:

@@ -189,3 +189,34 @@ def test_cli_missing_key_exits(monkeypatch):
     from assembly_agent.cli import main
     with pytest.raises(SystemExit):
         main(["phone", "list"])
+
+
+# --- declarative phone assignment at serve ------------------------------- #
+def test_agent_reads_phone_number_from_arg_and_env(monkeypatch):
+    from assembly_agent import Agent
+
+    assert Agent(name="P", phone_number="+14155550100").phone_number == "+14155550100"
+    monkeypatch.setenv("ASSEMBLY_AGENT_PHONE_NUMBER", "+14155550111")
+    assert Agent(name="P").phone_number == "+14155550111"
+
+
+def test_wire_phone_assigns_resolved_id(monkeypatch):
+    from assembly_agent import Agent
+
+    seen = {}
+    monkeypatch.setattr("assembly_agent.phones.assign_number",
+                        lambda number, agent_id, **kw: seen.update(number=number, agent_id=agent_id))
+
+    agent = Agent(name="P", phone_number="+14155550100")
+    agent.remote_agent_id = "agent_555"          # as if just registered at serve
+    agent._wire_phone(agent.phone_number, "aai")
+
+    assert seen == {"number": "+14155550100", "agent_id": "agent_555"}
+
+
+def test_wire_phone_requires_registration():
+    from assembly_agent import Agent
+
+    agent = Agent(name="P", phone_number="+14155550100")  # no remote_agent_id
+    with pytest.raises(RuntimeError):
+        agent._wire_phone(agent.phone_number, "aai")
