@@ -4,7 +4,7 @@ Everything wired the way you'd actually ship it:
 
   • personalized greeting from a CRM lookup on connect
   • your own model via the LLM Gateway (ctx.llm), model + system per turn
-  • a backend tool (order lookup) the handler calls when it's needed
+  • a backend lookup (order status) the handler does in plain code when needed
   • guardrails that run in *your* process: PII redaction + a refund-policy check
     (note: guardrails need the full reply, so this path uses complete(), not
     streaming — see proxy_existing_agent.py for the low-latency streaming case)
@@ -82,12 +82,6 @@ async def greet(ev, ctx):
     return f"Hi {customer.first_name}, thanks for calling Acme. How can I help?"
 
 
-@agent.tool
-async def order_status(order_id: str) -> dict:
-    "Look up the current status and ETA of an order by its ID (e.g. AB-12345)."
-    return await fetch_order(order_id)
-
-
 @agent.on_response
 async def respond(ev, ctx):
     text = ev.text.strip()
@@ -104,7 +98,7 @@ async def respond(ev, ctx):
     system = SYSTEM
     match = ORDER_ID.search(text)
     if match:
-        order = await ctx.call_tool("order_status", order_id=match.group())
+        order = await fetch_order(match.group())   # your backend — just call it
         system += (f" Known fact: order {order['order_id']} is {order['status']}, "
                    f"ETA {order['eta']}. Use it if relevant.")
 

@@ -23,7 +23,7 @@ import uuid
 
 def parse_args(argv):
     base = "http://localhost:8000/v1"
-    model = "agent"
+    model = "riverside-pharmacy"
     rest = list(argv)
     if "--model" in rest:
         i = rest.index("--model")

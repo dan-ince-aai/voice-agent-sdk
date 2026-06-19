@@ -13,7 +13,6 @@ from .gateway import Gateway, GatewayError
 from .phones import PhoneError
 from .reply import Reply
 from .signals import Caller, Signals, Speaker, Turn
-from .tools import Tool
 
 __all__ = [
     "Agent",
@@ -27,7 +26,6 @@ __all__ = [
     "Caller",
     "Speaker",
     "Turn",
-    "Tool",
     "Gateway",
     "GatewayError",
     "PhoneError",

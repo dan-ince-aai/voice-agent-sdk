@@ -102,8 +102,3 @@ class Context:
     @property
     def cancelled(self) -> bool:
         return self._cancelled
-
-    # --- tools ---
-    async def call_tool(self, name: str, **kwargs: Any) -> Any:
-        """Run a registered ``@agent.tool`` and return its result."""
-        return await self._agent.run_tool(name, kwargs)

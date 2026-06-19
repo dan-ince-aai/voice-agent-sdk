@@ -25,7 +25,6 @@ from typing import Any, Callable, Optional
 from . import events as ev_mod
 from .reply import Reply
 from .runtime import Runtime
-from .tools import Tool, build_tool
 
 __all__ = ["Agent", "Reply"]
 
@@ -78,7 +77,6 @@ class Agent:
         self._gateway = None
 
         self._handlers: dict[str, Callable] = {}
-        self._tools: dict[str, Tool] = {}
         self._stores: dict[str, dict] = {}
         self.runtime = Runtime(self)
         self._app = None
@@ -124,29 +122,6 @@ class Agent:
 
     def handler_for(self, event_type: str) -> Optional[Callable]:
         return self._handlers.get(event_type)
-
-    # ------------------------------------------------------------------ #
-    # tools
-    # ------------------------------------------------------------------ #
-    def tool(self, fn: Callable) -> Callable:
-        """Register a function as a tool. Schema is inferred from the
-        signature; the first paragraph of the docstring is the description."""
-        t = build_tool(fn)
-        self._tools[t.name] = t
-        return fn
-
-    @property
-    def tools(self) -> dict[str, Tool]:
-        return self._tools
-
-    def tool_schemas(self) -> list[dict]:
-        """All registered tools in OpenAI ``tools`` format."""
-        return [t.openai_schema() for t in self._tools.values()]
-
-    async def run_tool(self, name: str, args: dict) -> Any:
-        if name not in self._tools:
-            raise KeyError(f"No tool registered named {name!r}")
-        return await self._tools[name].run(args)
 
     # ------------------------------------------------------------------ #
     # per-call state

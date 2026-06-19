@@ -33,11 +33,6 @@ def build_agent():
             return toks()
         return f"echo: {ev.text}"
 
-    @agent.tool
-    def add(a: int, b: int) -> int:
-        "Add two numbers."
-        return a + b
-
     return agent
 
 

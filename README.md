@@ -97,7 +97,6 @@ Missing fields read back as `None`, so you can branch on them directly:
 | `ctx.transfer(name, reason=None)`   | Route the call to another agent.               |
 | `ctx.end(text="", reason=None)`     | Speak a goodbye, then hang up.                 |
 | `ctx.cancel_pending()`              | Drop in-flight work (on barge-in).             |
-| `await ctx.call_tool(name, **kw)`   | Run a registered tool.                          |
 
 ---
 
@@ -168,16 +167,19 @@ no key is set.
 
 ## Tools
 
-```python
-@agent.tool
-async def lookup_order(order_id: str) -> dict:
-    "Look up an order's status."
-    return await db.get_order(order_id)
-```
+There's no tool abstraction — and you don't need one. Tool-calling is part of
+*your* LLM loop: in `on_response` you call your model, run whatever function it
+asks for, and decide the reply from the result. It's all just your code:
 
-The JSON schema is inferred from the type hints; the first line of the docstring
-is the description. Call them with `await ctx.call_tool("lookup_order",
-order_id="123")`, or get OpenAI-format schemas via `agent.tool_schemas()`.
+```python
+@agent.on_response
+async def respond(ev, ctx):
+    if order_id := extract_order_id(ev.text):
+        order = await db.get_order(order_id)          # your function, called directly
+        return await ctx.llm.complete(model="claude-sonnet-4-6",
+                                      system=f"Order status: {order}. Answer the caller.")
+    return await ctx.llm.complete(model="claude-sonnet-4-6", system="Be helpful.")
+```
 
 ---
 
@@ -291,7 +293,7 @@ For scripting, the raw ops are in `assembly_agent.phones` and
 | File                            | Shows                                                  |
 | ------------------------------- | ------------------------------------------------------ |
 | `examples/managed.py`              | Simplest start — no handlers, the Gateway answers every turn. |
-| `examples/support_agent.py`        | **Flagship.** Production support agent: CRM, your model, a tool, guardrails, emotion-aware delivery, transfer, goodbye, CRM write-back, phone number. |
+| `examples/support_agent.py`        | **Flagship.** Production support agent: CRM, your model, a backend lookup, guardrails, emotion-aware delivery, transfer, goodbye, CRM write-back, phone number. |
 | `examples/proxy_existing_agent.py` | Voice front-end over your existing text agent — reuse the brain, stream the reply, add voice reflexes. |
 | `examples/mounted.py`              | Mount the agent into your existing FastAPI/Starlette service (`app.mount("/voice", agent.app)`). |
 | `examples/ivr.py`                  | Deterministic **no-LLM** flow (refill line) with per-call state — auditable, zero model latency. |
