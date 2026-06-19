@@ -113,9 +113,12 @@ class Runtime:
             result = await _maybe_await(handler(event, ctx))
         elif event_type == ev_mod.CALL_START and self.agent.greeting:
             result = self.agent.greeting
-        elif event_type == ev_mod.RESPONSE and self.agent.has_gateway():
-            # "Managed LLM" default: no on_response handler, but a Gateway key
-            # is configured — answer the turn through the Gateway.
+
+        # A response turn that nobody produced — no on_response, or the handler
+        # returned None (intercepted only to add context / redact) — falls back
+        # to the managed LLM: the Gateway if a key is configured, otherwise
+        # passthrough to the voice layer. Same path either way.
+        if event_type == ev_mod.RESPONSE and result is None and self.agent.has_gateway():
             result = await self._augment(ctx)
 
         outcome = self._normalize(result)

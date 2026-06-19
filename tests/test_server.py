@@ -7,7 +7,9 @@ from assembly_agent import Agent, Reply
 
 
 def build_agent():
-    agent = Agent(name="Test Agent", voice="ivy", greeting="Hi there, you're connected.")
+    # api_key="" -> no Gateway, so returning None means passthrough (not augment),
+    # independent of whatever ASSEMBLYAI_API_KEY may be in the environment.
+    agent = Agent(name="Test Agent", voice="ivy", greeting="Hi there, you're connected.", api_key="")
 
     @agent.on_response
     async def respond(ev, ctx):

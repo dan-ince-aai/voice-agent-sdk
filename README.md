@@ -190,7 +190,11 @@ Gateway errors, the turn falls back to passthrough.
 | `Reply(text, tone=, speed=, …)` | Same text, shaped delivery. Controls: `tone`, `speed`, `pitch`, `emphasis`, `pause`, `voice` (one-off voice swap). |
 | `async`/sync generator   | Tokens streamed to TTS as they arrive (lower time-to-first-audio). |
 | `ctx.transfer(...)`      | Hand the call to another agent.                                |
-| `None`                   | **Augment mode** — let a managed LLM handle this turn (you only intercepted to add context / redact). |
+| `None`                   | **Augment** — you didn't generate the reply, so fall back. Identical to having no `on_response` at all: the Gateway answers this turn (with any context you added to `ctx`/history) if a key is configured, otherwise the turn passes through to the voice layer's managed LLM. |
+
+So returning `None` is the "intercept only — add context, redact, then let the
+model write the words" pattern, and it routes exactly where a handler-less agent
+would.
 
 Delivery controls, transfer, and the passthrough signal ride back in an
 `assemblyai` extension field on the response choice, alongside a standard OpenAI

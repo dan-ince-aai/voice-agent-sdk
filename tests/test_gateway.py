@@ -105,6 +105,25 @@ def test_managed_default_no_handler():
     assert r.json()["choices"][0]["message"]["content"] == "managed reply"
 
 
+def test_handler_returning_none_falls_back_to_gateway():
+    # Returning None == "I didn't generate the reply" -> same as no handler:
+    # the Gateway answers (augment), not a passthrough signal.
+    agent = Agent(name="Aug", instructions="sys")
+    agent._gateway = FakeGateway(reply="gateway wrote this")
+
+    @agent.on_response
+    async def respond(ev, ctx):
+        ctx.history.append(type("M", (), {"role": "system", "content": "extra context"})())
+        return None  # intercepted only to add context
+
+    client = TestClient(agent.app)
+    r = client.post("/v1/chat/completions", json={
+        "model": "a", "messages": [{"role": "user", "content": "hi"}],
+        "assemblyai": {"call_id": "a"},
+    })
+    assert r.json()["choices"][0]["message"]["content"] == "gateway wrote this"
+
+
 def test_no_gateway_no_handler_is_passthrough():
     # No key -> not configured -> passthrough (managed LLM on the voice side).
     agent = Agent(name="Bare", api_key="")
