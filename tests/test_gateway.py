@@ -48,6 +48,16 @@ def test_callllm_builds_messages_with_system_and_history():
     assert fake.seen[-1] == {"role": "user", "content": "what's up"}
 
 
+def test_callllm_tolerates_dict_history_items():
+    # Handlers naturally append plain dicts to ctx.history — they must be sent.
+    fake = FakeGateway()
+    history = [{"role": "user", "content": "hi"}, {"role": "system", "content": "extra fact"}]
+    llm = CallLLM(fake, history)
+    asyncio.run(llm.complete())
+    assert {"role": "user", "content": "hi"} in fake.seen
+    assert {"role": "system", "content": "extra fact"} in fake.seen
+
+
 def test_handler_uses_ctx_llm():
     agent = Agent(name="G")
     fake = FakeGateway(reply="from the gateway")

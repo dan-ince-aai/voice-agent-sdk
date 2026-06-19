@@ -290,12 +290,12 @@ For scripting, the raw ops are in `assembly_agent.phones` and
 
 | File                            | Shows                                                  |
 | ------------------------------- | ------------------------------------------------------ |
-| `examples/managed.py`           | No handlers — the Gateway answers every turn.          |
-| `examples/llm_gateway.py`       | `ctx.llm` with an emotion-shaped short-circuit.        |
-| `examples/support_assistant.py` | CRM lookup, guardrails, `Reply`, transfer, a tool.     |
-| `examples/decision_tree.py`     | Bring-your-own-logic with **no LLM** (rules + state).  |
-| `examples/streaming.py`         | Token streaming via an async generator.                |
-| `examples/call.py`              | Terminal client to talk to any of them.                |
+| `examples/managed.py`              | Simplest start — no handlers, the Gateway answers every turn. |
+| `examples/support_agent.py`        | **Flagship.** Production support agent: CRM, your model, a tool, guardrails, emotion-aware delivery, transfer, goodbye, CRM write-back, phone number. |
+| `examples/proxy_existing_agent.py` | Voice front-end over your existing text agent — reuse the brain, stream the reply, add voice reflexes. |
+| `examples/mounted.py`              | Mount the agent into your existing FastAPI/Starlette service (`app.mount("/voice", agent.app)`). |
+| `examples/ivr.py`                  | Deterministic **no-LLM** flow (refill line) with per-call state — auditable, zero model latency. |
+| `examples/call.py`                 | Terminal client to talk to any of them.                |
 
 Run tests with `pip install -e ".[dev]" && pytest`.
 

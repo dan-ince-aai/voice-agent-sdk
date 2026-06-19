@@ -144,14 +144,21 @@ class CallLLM:
         self._gateway = gateway
         self._history = history
 
+    @staticmethod
+    def _role_content(m):
+        # Tolerate both Message bags (attribute access) and plain dicts —
+        # handlers naturally append dicts to ctx.history.
+        if isinstance(m, dict):
+            return m.get("role"), m.get("content")
+        return getattr(m, "role", None), getattr(m, "content", None)
+
     def _messages(self, system: Optional[str]) -> list[dict]:
         msgs: list[dict] = []
-        has_system = any(getattr(m, "role", None) == "system" for m in self._history)
+        has_system = any(self._role_content(m)[0] == "system" for m in self._history)
         if system and not has_system:
             msgs.append({"role": "system", "content": system})
         for m in self._history:
-            role = getattr(m, "role", None)
-            content = getattr(m, "content", None)
+            role, content = self._role_content(m)
             if role in ("system", "user", "assistant") and content:
                 msgs.append({"role": role, "content": content if isinstance(content, str) else str(content)})
         return msgs
