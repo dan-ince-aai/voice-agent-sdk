@@ -217,50 +217,29 @@ class Agent:
         port: int = 8000,
         *,
         tunnel: bool = True,
+        public_url: Optional[str] = None,
         tunnel_provider: str = "auto",
-        register: bool = True,
-        agent_id: Optional[str] = None,
-        phone_number: Optional[str] = None,
         **uvicorn_kwargs: Any,
     ) -> None:
-        """Run the OpenAI-compatible server (blocking).
+        """Run the agent's chat-completions endpoint (blocking).
 
-        By default this opens a public HTTPS URL (via ``cloudflared`` or
-        ``ngrok``) and, if ``ASSEMBLYAI_API_KEY`` is set, wires that URL onto
-        your agent record and prints a playground link so you can test it in the
-        browser immediately. Pass ``tunnel=False`` for a local-only endpoint, or
-        ``register=False`` to skip touching the agent record.
-
-        ``phone_number`` (or ``Agent(phone_number=…)``) assigns an
-        already-purchased number to this agent at boot — buy it once with the
-        ``assembly-agent phone buy`` CLI, then drop the number here.
+        With ``ASSEMBLYAI_API_KEY`` set, the agent is registered automatically
+        and a browser playground link is printed. ``tunnel=True`` (default)
+        opens a public URL to your machine. For a deploy, use ``tunnel=False``
+        and pass ``public_url`` (or ``ASSEMBLY_AGENT_PUBLIC_URL``) so the record
+        points at your host. A ``phone_number`` on the ``Agent`` is assigned on
+        boot.
         """
-        import uvicorn
-
-        if not tunnel:
-            shown_host = "localhost" if host in ("0.0.0.0", "") else host
-            self._print_banner(f"http://{shown_host}:{port}/v1")
-            uvicorn.run(self.app, host=host, port=port, **uvicorn_kwargs)
-            return
-
-        self._serve_with_tunnel(host, port, tunnel_provider, register, agent_id,
-                                phone_number or self.phone_number, uvicorn_kwargs)
-
-    def _serve_with_tunnel(self, host, port, provider, register, agent_id, phone_number, uvicorn_kwargs) -> None:
         import time
 
         import uvicorn
 
-        from .tunnel import open_tunnel
-
-        # We only register (and lock the endpoint with a rotating key) when a
-        # key is actually available — otherwise a local dev run would lock its
-        # own endpoint with a secret nobody knows, breaking curl/call.py.
         api_key = self.api_key or os.environ.get("ASSEMBLYAI_API_KEY")
-        will_register = register and bool(api_key)
+        public_url = public_url or os.environ.get("ASSEMBLY_AGENT_PUBLIC_URL")
+        will_register = bool(api_key) and (tunnel or bool(public_url))
 
-        # Mint the rotating ingress key *before* the server starts, so the
-        # endpoint is never open in the window before registration.
+        # Mint the rotating ingress key before serving, so the endpoint is never
+        # open in the window before registration.
         if will_register and not self._ingress_explicit:
             self.ingress_key = secrets.token_urlsafe(24)
 
@@ -271,40 +250,43 @@ class Agent:
         while not server.started:
             time.sleep(0.05)
 
-        print(f"\n  AssemblyAI Agent SDK — {self.name!r}")
-        print(f"  Local:  http://localhost:{port}/v1")
-        print("  Opening public tunnel…")
-        tun = open_tunnel(port, provider=provider)
+        tun = None
+        url = public_url
+        if tunnel:
+            from .tunnel import open_tunnel
 
-        if tun is None:
-            print("  Could not open a tunnel. Install cloudflared (recommended) or ngrok:")
-            print("    brew install cloudflared")
-            print(f"  The server is still running locally at http://localhost:{port}/v1\n")
+            print(f"\n  Opening public tunnel for {self.name!r}…")
+            tun = open_tunnel(port, provider=tunnel_provider)
+            if tun is None:
+                print("  Could not open a tunnel. Install cloudflared (brew install cloudflared) or ngrok.")
+                print(f"  Serving locally at http://localhost:{port}/v1\n")
+            else:
+                url = tun.url
+                self._print_banner(f"{url}/v1", public=True, via=tun.provider)
         else:
-            self._print_banner(f"{tun.url}/v1", public=True, via=tun.provider)
-            if will_register:
-                try:
-                    # Key already minted above; don't rotate again here.
-                    record = self.register(tun.url, agent_id=agent_id, rotate=False)
-                    aid = record.get("id")
-                    if aid:
-                        print(f"  Agent id: {aid}")
-                        print(f"  Test it in your browser:\n    {_PLAYGROUND_URL}/{aid}\n")
-                    else:
-                        print("  Registered the agent record (no id returned).\n")
-                    # Now that the agent has an id, bind the phone number to it.
-                    if phone_number and self.remote_agent_id:
-                        try:
-                            self._wire_phone(phone_number, api_key)
-                            print(f"  Phone: calls to {phone_number} now reach this agent.\n")
-                        except Exception as exc:  # noqa: BLE001
-                            print(f"  Could not assign {phone_number} — is it purchased? "
-                                  f"Run: assembly-agent phone buy ...\n    ({exc})\n")
-                except Exception as exc:  # noqa: BLE001
-                    print(f"  Registration failed (serving anyway): {exc}\n")
-            elif register:
-                print("  Set ASSEMBLYAI_API_KEY to auto-register this URL on your agent "
-                      "and get a browser test link.\n")
+            shown = "localhost" if host in ("0.0.0.0", "") else host
+            self._print_banner(f"{public_url or f'http://{shown}:{port}'}/v1")
+
+        try:
+            if api_key and url:
+                record = self.register(url, rotate=False)
+                aid = record.get("id")
+                if aid:
+                    print(f"  Agent id: {aid}")
+                    print(f"  Test it in your browser:\n    {_PLAYGROUND_URL}/{aid}\n")
+                if self.phone_number and self.remote_agent_id:
+                    try:
+                        self._wire_phone(self.phone_number, api_key)
+                        print(f"  Phone: calls to {self.phone_number} now reach this agent.\n")
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"  Could not assign {self.phone_number} — is it purchased? "
+                              f"Run: assembly-agent phone buy ...\n    ({exc})\n")
+            elif not api_key:
+                print("  Set ASSEMBLYAI_API_KEY to register this agent and get a browser link.\n")
+            elif not url:
+                print("  Pass public_url=… (or ASSEMBLY_AGENT_PUBLIC_URL) to register a deployed URL.\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"  Registration failed (serving anyway): {exc}\n")
 
         try:
             while thread.is_alive():
