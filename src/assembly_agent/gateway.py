@@ -145,30 +145,43 @@ class CallLLM:
         self._history = history
 
     @staticmethod
-    def _role_content(m):
-        # Tolerate both Message bags (attribute access) and plain dicts —
-        # handlers naturally append dicts to ctx.history.
+    def _as_dict(m) -> dict:
+        # Tolerate dicts, Message bags (to_dict), and plain attribute objects.
         if isinstance(m, dict):
-            return m.get("role"), m.get("content")
-        return getattr(m, "role", None), getattr(m, "content", None)
+            return m
+        if hasattr(m, "to_dict"):
+            return m.to_dict()
+        return {k: getattr(m, k, None) for k in ("role", "content", "tool_calls", "tool_call_id")}
 
     def _messages(self, system: Optional[str]) -> list[dict]:
         msgs: list[dict] = []
-        has_system = any(self._role_content(m)[0] == "system" for m in self._history)
+        has_system = any(self._as_dict(m).get("role") == "system" for m in self._history)
         if system and not has_system:
             msgs.append({"role": "system", "content": system})
         seen_user = False
         for m in self._history:
-            role, content = self._role_content(m)
-            if role not in ("system", "user", "assistant") or not content:
+            d = self._as_dict(m)
+            role, content = d.get("role"), d.get("content")
+            # Preserve tool results verbatim (the worker posts them back after a
+            # tool_call continuation).
+            if role == "tool":
+                msgs.append({"role": "tool", "tool_call_id": d.get("tool_call_id"), "content": content})
+                continue
+            if role not in ("system", "user", "assistant"):
                 continue
             # Drop a leading assistant turn (e.g. the greeting) — models expect
             # the conversation to start with the user after the system prompt.
-            if role == "assistant" and not seen_user:
+            if role == "assistant" and not seen_user and not d.get("tool_calls"):
                 continue
             if role == "user":
                 seen_user = True
-            msgs.append({"role": role, "content": content if isinstance(content, str) else str(content)})
+            msg: dict = {"role": role}
+            if content is not None:
+                msg["content"] = content if isinstance(content, str) else str(content)
+            if d.get("tool_calls"):
+                msg["tool_calls"] = d["tool_calls"]   # keep assistant tool_calls intact
+            if "content" in msg or "tool_calls" in msg:
+                msgs.append(msg)
         return msgs
 
     async def complete(self, *, model: Optional[str] = None, system: Optional[str] = None, **params: Any) -> str:
