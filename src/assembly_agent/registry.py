@@ -5,12 +5,17 @@ that ``base_url`` as a chat-completions endpoint, presenting the configured
 ``api_key``. This module upserts that record so the URL where your SDK runs
 (a tunnel in dev, your host in prod) is what the voice layer dials.
 
+Identity is the agent **name**: register lists the existing agents
+(``GET /v1/agents``) and, if one already has this name, updates it; otherwise
+it creates a new one. So re-running just updates "the agent called X". (Pass an
+explicit ``agent_id`` to target a specific record, e.g. if you rename in code.)
+
 Create vs update:
-- No ``agent_id`` → ``POST /v1/agents`` creates a record.
-- ``agent_id`` given → ``GET`` the record, swap in the ``llm`` block, and
-  ``PUT /v1/agents/{id}``. We merge rather than send a bare body because PUT is
-  a full replace — a minimal body would wipe the ``input`` / ``output`` /
-  ``tools`` you configured.
+- No match → ``POST /v1/agents`` creates a record.
+- Match (or explicit ``agent_id``) → ``GET`` the record, swap in the ``llm``
+  block, and ``PUT /v1/agents/{id}``. We merge rather than send a bare body
+  because PUT is a full replace — a minimal body would wipe the ``input`` /
+  ``output`` / ``tools`` you configured.
 
 Contract (per the agent_record PRs):
 - ``base_url`` must be HTTPS with a public-DNS host (SSRF guard) — so
@@ -55,6 +60,28 @@ def normalize_base_url(public_url: str) -> str:
             "Use the public tunnel (serve()) or a deployed URL."
         )
     return base
+
+
+def _agent_list(payload: Any) -> list:
+    """Pull the agent array out of a list response, tolerating common shapes."""
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("agents", "data", "items", "results"):
+            if isinstance(payload.get(key), list):
+                return payload[key]
+    return []
+
+
+def find_agent_id_by_name(client, name: str, api_base: str, headers: dict) -> Optional[str]:
+    """Return the id of an existing agent with this name, or None."""
+    resp = client.get(f"{api_base}/agents", headers=headers)
+    if resp.status_code >= 400:
+        return None
+    for agent in _agent_list(resp.json()):
+        if isinstance(agent, dict) and agent.get("name") == name:
+            return agent.get("id")
+    return None
 
 
 def _managed_fields(
@@ -107,6 +134,10 @@ def register_agent(
     headers = {"Authorization": assemblyai_api_key, "Content-Type": "application/json"}
 
     with httpx.Client(timeout=timeout) as client:
+        # No explicit id → identify the record by name.
+        if not agent_id:
+            agent_id = find_agent_id_by_name(client, name, api_base, headers)
+
         if agent_id:
             # PUT is a full replace — start from the existing record so we don't
             # drop input/output/tools, then swap in our managed fields + llm.

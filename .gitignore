@@ -24,7 +24,6 @@ htmlcov/
 .env
 .env.*
 !.env.example
-.assembly_agent.json
 
 # Editor / OS
 .DS_Store

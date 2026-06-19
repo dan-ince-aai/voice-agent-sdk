@@ -217,11 +217,13 @@ agent.serve(register=True)
 ```
 
 Each run it: mints a **fresh ingress key**, points the record's `base_url` at
-the current tunnel URL, and **updates the same record** (it remembers the agent
-id in `.assembly_agent.json`, so restarts `PUT` instead of creating
-duplicates). You never copy the ephemeral URL or manage the secret by hand. Do
-it explicitly with `agent.register("https://…/v1")`, or the `POST/PUT
-/v1/agents` curl.
+the current tunnel URL, and **updates the agent with the same name** — it lists
+your agents (`GET /v1/agents`), and if one already has this name it `PUT`s that
+record, otherwise it creates one. So the name is the identity; re-running just
+updates "the agent called X". You never copy the ephemeral URL or manage the
+secret by hand. Do it explicitly with `agent.register("https://…/v1")` (pass
+`agent_id=` to target a specific record, e.g. after a rename), or the
+`POST/PUT /v1/agents` curl.
 
 What the SDK handles for you, from the agent-record contract:
 

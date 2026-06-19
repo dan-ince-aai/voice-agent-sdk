@@ -17,7 +17,6 @@ with an LLM, a decision tree, a lookup table, whatever you write.
 
 from __future__ import annotations
 
-import json
 import os
 import secrets
 import threading
@@ -183,9 +182,9 @@ class Agent:
         fresh shared secret is minted here (``rotate=True``) and written to the
         record as the LLM ``api_key`` — a new key per registration.
 
-        The record id is remembered (in ``.assembly_agent.json`` in the working
-        dir, keyed by agent name) so later runs **update the same record** via
-        PUT instead of creating duplicates."""
+        The record is identified by **name**: if an agent with this name already
+        exists it's updated (PUT), otherwise one is created (POST). Pass
+        ``agent_id`` to target a specific record instead."""
         from .registry import register_agent
 
         if self._ingress_explicit:
@@ -194,7 +193,6 @@ class Agent:
             self.ingress_key = secrets.token_urlsafe(24)
 
         key = assemblyai_api_key or self.api_key or os.environ.get("ASSEMBLYAI_API_KEY", "")
-        aid = agent_id or self.remote_agent_id or _load_remote_id(self.agent_id)
         record = register_agent(
             name=self.name,
             voice=self.voice,
@@ -202,14 +200,12 @@ class Agent:
             model=model or self.model,
             ingress_key=self.ingress_key,
             assemblyai_api_key=key,
-            agent_id=aid,
+            agent_id=agent_id or self.remote_agent_id,
             greeting=self.greeting,
             system_prompt=system_prompt,
             extra=extra,
         )
-        self.remote_agent_id = record.get("id") or aid
-        if self.remote_agent_id:
-            _save_remote_id(self.agent_id, self.remote_agent_id)
+        self.remote_agent_id = record.get("id") or agent_id or self.remote_agent_id
         return record
 
     def serve(
@@ -306,29 +302,3 @@ def _slug(name: str) -> str:
     while "--" in out:
         out = out.replace("--", "-")
     return out.strip("-") or _DEFAULT_MODEL
-
-
-# Remember the AssemblyAI agent-record id across runs (keyed by agent slug), so
-# serve(register=True) updates the same record instead of creating duplicates.
-_REMOTE_ID_FILE = ".assembly_agent.json"
-
-
-def _load_remote_id(slug: str) -> Optional[str]:
-    try:
-        with open(_REMOTE_ID_FILE) as f:
-            return json.load(f).get(slug)
-    except Exception:
-        return None
-
-
-def _save_remote_id(slug: str, remote_id: str) -> None:
-    try:
-        data = {}
-        if os.path.exists(_REMOTE_ID_FILE):
-            with open(_REMOTE_ID_FILE) as f:
-                data = json.load(f)
-        data[slug] = remote_id
-        with open(_REMOTE_ID_FILE, "w") as f:
-            json.dump(data, f, indent=2)
-    except Exception:
-        pass
