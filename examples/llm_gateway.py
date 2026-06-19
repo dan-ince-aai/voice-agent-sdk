@@ -23,14 +23,17 @@ from assembly_agent import Agent, Reply
 
 MODEL = os.environ.get("LLM_GATEWAY_MODEL", "claude-sonnet-4-6")
 
+# The system prompt is part of *your* response generation, so it lives here in
+# your logic, not in the agent config — passed per call below.
+SYSTEM = (
+    "You are a warm, concise voice assistant. Speak in one or two short "
+    "sentences. Never use lists or formatting — this is spoken aloud."
+)
+
 agent = Agent(
     name="Gateway Assistant",
     voice="ivy",
     # Config is identity + senses only. The key comes from ASSEMBLYAI_API_KEY.
-    instructions=(
-        "You are a warm, concise voice assistant. Speak in one or two short "
-        "sentences. Never use lists or formatting — this is spoken aloud."
-    ),
     greeting="Hey, I'm running through the LLM Gateway. What can I help with?",
 )
 
@@ -42,13 +45,12 @@ async def respond(ev, ctx):
     if ev.signals.emotion == "frustrated":
         return Reply("I hear you — let me help with that.", tone="reassuring", speed="slow")
 
-    # Answer the turn through the Gateway, picking the model per request.
-    # ctx.llm already has the call history and the agent's instructions as the
-    # system prompt.
-    return await ctx.llm.complete(model=MODEL)
+    # Answer the turn through the Gateway, picking the model and system prompt
+    # per request. ctx.llm already carries the call history.
+    return await ctx.llm.complete(model=MODEL, system=SYSTEM)
 
     # Streaming variant (for models that support it), lower time-to-first-audio:
-    #   return ctx.llm.stream(model=MODEL)
+    #   return ctx.llm.stream(model=MODEL, system=SYSTEM)
 
 
 @agent.on_interrupt

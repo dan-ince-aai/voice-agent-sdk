@@ -11,7 +11,7 @@ config:
 
     @agent.on_response
     async def respond(ev, ctx):
-        return await ctx.llm.complete(model="claude-sonnet-4-6")  # full reply
+        return await ctx.llm.complete(model="claude-sonnet-4-6", system="Be warm.")
         # or: return ctx.llm.stream(model="gpt-4o")               # stream to TTS
 
 And if you register no ``on_response`` at all, the agent falls back to the
@@ -132,19 +132,23 @@ class Gateway:
 
 
 class CallLLM:
-    """Per-call view of the Gateway, bound to the running history and the
-    agent's instructions (used as the system prompt). This is ``ctx.llm``."""
+    """Per-call view of the Gateway, bound to the running history. This is
+    ``ctx.llm``.
 
-    def __init__(self, gateway: Gateway, history: list, system: Optional[str]) -> None:
+    The system prompt is part of response generation, so it's passed per call
+    (``system=``) — or just included as a system message in the history the
+    voice layer sent. It is not agent config.
+    """
+
+    def __init__(self, gateway: Gateway, history: list) -> None:
         self._gateway = gateway
         self._history = history
-        self._system = system
 
-    def _messages(self) -> list[dict]:
+    def _messages(self, system: Optional[str]) -> list[dict]:
         msgs: list[dict] = []
         has_system = any(getattr(m, "role", None) == "system" for m in self._history)
-        if self._system and not has_system:
-            msgs.append({"role": "system", "content": self._system})
+        if system and not has_system:
+            msgs.append({"role": "system", "content": system})
         for m in self._history:
             role = getattr(m, "role", None)
             content = getattr(m, "content", None)
@@ -152,11 +156,11 @@ class CallLLM:
                 msgs.append({"role": role, "content": content if isinstance(content, str) else str(content)})
         return msgs
 
-    async def complete(self, *, model: Optional[str] = None, **params: Any) -> str:
-        return await self._gateway.complete(self._messages(), model=model, **params)
+    async def complete(self, *, model: Optional[str] = None, system: Optional[str] = None, **params: Any) -> str:
+        return await self._gateway.complete(self._messages(system), model=model, **params)
 
-    def stream(self, *, model: Optional[str] = None, **params: Any) -> AsyncIterator[str]:
-        return self._gateway.stream(self._messages(), model=model, **params)
+    def stream(self, *, model: Optional[str] = None, system: Optional[str] = None, **params: Any) -> AsyncIterator[str]:
+        return self._gateway.stream(self._messages(system), model=model, **params)
 
-    async def __call__(self, *, model: Optional[str] = None, **params: Any) -> str:
-        return await self.complete(model=model, **params)
+    async def __call__(self, *, model: Optional[str] = None, system: Optional[str] = None, **params: Any) -> str:
+        return await self.complete(model=model, system=system, **params)

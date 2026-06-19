@@ -41,8 +41,8 @@ def test_callllm_builds_messages_with_system_and_history():
 
     fake = FakeGateway()
     history = [M("user", "hi"), M("assistant", "hello"), M("user", "what's up")]
-    llm = CallLLM(fake, history, system="be nice")
-    asyncio.run(llm.complete())
+    llm = CallLLM(fake, history)
+    asyncio.run(llm.complete(system="be nice"))  # system is per-call, not config
     assert fake.seen[0] == {"role": "system", "content": "be nice"}
     assert {"role": "user", "content": "hi"} in fake.seen
     assert fake.seen[-1] == {"role": "user", "content": "what's up"}
@@ -94,7 +94,7 @@ def test_agent_takes_no_llm_model_config():
 
 def test_managed_default_no_handler():
     # No on_response, but a Gateway key -> the turn is answered automatically.
-    agent = Agent(name="Managed", instructions="sys")
+    agent = Agent(name="Managed")
     agent._gateway = FakeGateway(reply="managed reply")
 
     client = TestClient(agent.app)
@@ -108,7 +108,7 @@ def test_managed_default_no_handler():
 def test_handler_returning_none_falls_back_to_gateway():
     # Returning None == "I didn't generate the reply" -> same as no handler:
     # the Gateway answers (augment), not a passthrough signal.
-    agent = Agent(name="Aug", instructions="sys")
+    agent = Agent(name="Aug")
     agent._gateway = FakeGateway(reply="gateway wrote this")
 
     @agent.on_response

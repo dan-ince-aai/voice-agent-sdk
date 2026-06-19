@@ -49,12 +49,13 @@ class Context:
 
     @property
     def llm(self):
-        """The LLM Gateway, bound to this call's history and the agent's
-        instructions. ``await ctx.llm.complete()`` or ``ctx.llm.stream()``."""
+        """The LLM Gateway, bound to this call's history. Pick the model (and
+        optional system prompt) per call: ``await ctx.llm.complete(model=…,
+        system=…)`` or ``ctx.llm.stream(model=…)``."""
         if self._llm is None:
             from .gateway import CallLLM
 
-            self._llm = CallLLM(self._agent.gateway, self.history, self._agent.instructions)
+            self._llm = CallLLM(self._agent.gateway, self.history)
         return self._llm
 
     # --- key/value store, lives for the whole call ---

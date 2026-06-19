@@ -37,7 +37,6 @@ class Agent:
         *,
         voice: str = "ivy",
         greeting: Optional[str] = None,
-        instructions: Optional[str] = None,
         prompt: Optional[str] = None,
         model: Optional[str] = None,
         agent_id: Optional[str] = None,
@@ -47,7 +46,6 @@ class Agent:
         self.name = name
         self.voice = voice
         self.greeting = greeting
-        self.instructions = instructions
         self.prompt = prompt
         # Stable id for upsert; falls back to a slug of the name.
         self.agent_id = agent_id or _slug(name)

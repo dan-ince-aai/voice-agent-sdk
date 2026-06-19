@@ -158,21 +158,21 @@ authenticates with your AssemblyAI key, so the Gateway **reuses
 `ASSEMBLYAI_API_KEY`** — no second credential, nothing in code.
 
 ```python
-agent = Agent(name="Assistant", voice="ivy", instructions="Be warm and concise.")
+agent = Agent(name="Assistant", voice="ivy")
 
 @agent.on_response
 async def respond(ev, ctx):
     if ev.signals.emotion == "frustrated":
         return Reply("I hear you.", tone="reassuring", speed="slow")
-    return await ctx.llm.complete(model="claude-sonnet-4-6")   # or ctx.llm.stream(model=...)
+    return await ctx.llm.complete(model="claude-sonnet-4-6", system="Be warm and concise.")
 ```
 
-The **model is chosen per request**, in the call — it's a response-generation
-decision, not agent config. Agent config stays about identity and senses (name,
-voice, instructions) plus connection (`api_key`, `llm_base_url` for EU
-residency). `ctx.llm` already carries the call history and your `instructions`
-(as the system prompt), so the only argument you usually pass is `model=`; any
-other Gateway param goes through as kwargs.
+The **model and system prompt are chosen per request**, in the call — both are
+response-generation decisions, not agent config. Agent config stays about
+identity and senses (name, voice, greeting, TTS `prompt`) plus connection
+(`api_key`, `llm_base_url` for EU residency). `ctx.llm` already carries the call
+history, so you pass `model=` (and optionally `system=`); any other Gateway
+param goes through as kwargs.
 
 **Managed default:** register *no* `on_response` and, as long as
 `ASSEMBLYAI_API_KEY` is set, every turn is answered through the Gateway
