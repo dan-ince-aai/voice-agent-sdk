@@ -2,8 +2,15 @@
 
 The AssemblyAI agent record carries an ``llm`` array; the voice layer calls
 that ``base_url`` as a chat-completions endpoint, presenting the configured
-``api_key``. This module upserts that record so the URL where your SDK is
-running (a tunnel in dev, your host in prod) is what the voice layer dials.
+``api_key``. This module upserts that record so the URL where your SDK runs
+(a tunnel in dev, your host in prod) is what the voice layer dials.
+
+Create vs update:
+- No ``agent_id`` → ``POST /v1/agents`` creates a record.
+- ``agent_id`` given → ``GET`` the record, swap in the ``llm`` block, and
+  ``PUT /v1/agents/{id}``. We merge rather than send a bare body because PUT is
+  a full replace — a minimal body would wipe the ``input`` / ``output`` /
+  ``tools`` you configured.
 
 Contract (per the agent_record PRs):
 - ``base_url`` must be HTTPS with a public-DNS host (SSRF guard) — so
@@ -15,11 +22,13 @@ Contract (per the agent_record PRs):
 
 from __future__ import annotations
 
-import os
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 DEFAULT_API_BASE = "https://agents.assemblyai.com/v1"
+
+# Server-managed fields that a read returns but a write won't accept.
+_NON_WRITABLE = {"id", "created_at", "updated_at", "request_id", "object"}
 
 
 class RegistrationError(RuntimeError):
@@ -48,33 +57,22 @@ def normalize_base_url(public_url: str) -> str:
     return base
 
 
-def build_record(
-    *,
+def _managed_fields(
     name: str,
     voice: str,
-    base_url: str,
-    model: str,
-    ingress_key: str,
-    greeting: Optional[str] = None,
-    system_prompt: Optional[str] = None,
-    extra: Optional[dict] = None,
+    greeting: Optional[str],
+    system_prompt: Optional[str],
+    extra: Optional[dict],
 ) -> dict:
-    if not model:
-        raise RegistrationError("llm.model must be non-empty.")
-    if not ingress_key:
-        raise RegistrationError("llm.api_key must be non-empty.")
-    record: dict[str, Any] = {
-        "name": name,
-        "voice": {"voice_id": voice},
-        "llm": [{"base_url": base_url, "model": model, "api_key": ingress_key}],
-    }
+    """The fields the SDK owns on the record (everything except the llm block)."""
+    rec: dict[str, Any] = {"name": name, "voice": {"voice_id": voice}}
     if greeting:
-        record["greeting"] = greeting
+        rec["greeting"] = greeting
     if system_prompt:
-        record["system_prompt"] = system_prompt
+        rec["system_prompt"] = system_prompt
     if extra:
-        record.update(extra)
-    return record
+        rec.update(extra)
+    return rec
 
 
 def register_agent(
@@ -89,33 +87,40 @@ def register_agent(
     greeting: Optional[str] = None,
     system_prompt: Optional[str] = None,
     extra: Optional[dict] = None,
+    merge: bool = True,
     api_base: str = DEFAULT_API_BASE,
     timeout: float = 30.0,
 ) -> dict:
-    """Create (POST) or update (PUT, when ``agent_id`` is given) the agent
-    record so its ``llm`` endpoint points at ``public_url``. Returns the record."""
+    """Create or update the agent record so its ``llm`` endpoint points at
+    ``public_url`` with ``ingress_key`` as the shared secret. Returns the record."""
     import httpx
 
     if not assemblyai_api_key:
         raise RegistrationError("ASSEMBLYAI_API_KEY is required to register the agent.")
+    if not model:
+        raise RegistrationError("llm.model must be non-empty.")
+    if not ingress_key:
+        raise RegistrationError("llm.api_key must be non-empty.")
 
     base_url = normalize_base_url(public_url)
-    record = build_record(
-        name=name,
-        voice=voice,
-        base_url=base_url,
-        model=model,
-        ingress_key=ingress_key,
-        greeting=greeting,
-        system_prompt=system_prompt,
-        extra=extra,
-    )
+    llm_entry = {"base_url": base_url, "model": model, "api_key": ingress_key}
     headers = {"Authorization": assemblyai_api_key, "Content-Type": "application/json"}
 
     with httpx.Client(timeout=timeout) as client:
         if agent_id:
+            # PUT is a full replace — start from the existing record so we don't
+            # drop input/output/tools, then swap in our managed fields + llm.
+            record: dict[str, Any] = {}
+            if merge:
+                got = client.get(f"{api_base}/agents/{agent_id}", headers=headers)
+                if got.status_code < 400:
+                    record = {k: v for k, v in got.json().items() if k not in _NON_WRITABLE}
+            record.update(_managed_fields(name, voice, greeting, system_prompt, extra))
+            record["llm"] = [llm_entry]
             resp = client.put(f"{api_base}/agents/{agent_id}", json=record, headers=headers)
         else:
+            record = _managed_fields(name, voice, greeting, system_prompt, extra)
+            record["llm"] = [llm_entry]
             resp = client.post(f"{api_base}/agents", json=record, headers=headers)
 
     if resp.status_code >= 400:

@@ -210,25 +210,31 @@ endpoint:
 "llm": [{ "base_url": "https://abc.trycloudflare.com/v1", "model": "support-assistant", "api_key": "•••" }]
 ```
 
-Let `serve()` wire it for you — it upserts the agent record to the current URL
-each run, so the ephemeral tunnel URL never has to be copied by hand:
+Let `serve()` wire it for you — needs `ASSEMBLYAI_API_KEY`:
 
 ```python
-agent.serve(register=True)     # needs ASSEMBLYAI_API_KEY
+agent.serve(register=True)
 ```
 
-Or do it explicitly: `agent.register("https://…/v1")`, or the `POST
-/v1/agents` curl directly.
+Each run it: mints a **fresh ingress key**, points the record's `base_url` at
+the current tunnel URL, and **updates the same record** (it remembers the agent
+id in `.assembly_agent.json`, so restarts `PUT` instead of creating
+duplicates). You never copy the ephemeral URL or manage the secret by hand. Do
+it explicitly with `agent.register("https://…/v1")`, or the `POST/PUT
+/v1/agents` curl.
 
-Two rules from the agent-record contract the SDK enforces for you:
+What the SDK handles for you, from the agent-record contract:
 
 - **HTTPS, public-DNS host.** `register()` rejects `http://localhost` — use the
-  tunnel (`serve()`) or a deployed URL. The model and api_key must be non-empty.
-- **The `api_key` is a shared secret**, not your AssemblyAI key — it's what the
-  voice layer presents when calling the SDK. Set `Agent(..., ingress_key=...)`
-  (or let `register=True` generate one) and the server **rejects requests that
-  don't present it**, so your public URL isn't open to the world. It's
-  encrypted at rest and never returned on reads.
+  tunnel (`serve()`) or a deployed URL. `model` and `api_key` must be non-empty.
+- **The `api_key` is a rotating shared secret**, not your AssemblyAI key — it's
+  what the voice layer presents when calling the SDK. A new one is minted each
+  `serve()` (set `Agent(..., ingress_key=...)` to pin your own instead), and the
+  server **rejects requests that don't present it**, so your public URL isn't
+  open. It's encrypted at rest and never returned on reads.
+- **Updates merge.** `PUT` is a full replace, so the SDK fetches the record
+  first and swaps in only the `llm` block — your `input` / `output` / `tools`
+  config is preserved.
 
 The record's `model` is sent in each request's `model` field; your handler can
 use it or ignore it (the model you actually call is `ctx.llm.complete(model=…)`).

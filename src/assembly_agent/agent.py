@@ -17,6 +17,7 @@ with an LLM, a decision tree, a lookup table, whatever you write.
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import threading
@@ -56,8 +57,11 @@ class Agent:
 
         # Ingress secret: the `api_key` the voice layer presents when calling
         # this SDK as the agent's BYO LLM endpoint. When set, the server rejects
-        # requests without it. Defaults to the env var if present.
-        self.ingress_key = ingress_key or os.environ.get("ASSEMBLY_AGENT_INGRESS_KEY")
+        # requests without it. An explicit key (constructor or env) is kept as-is;
+        # otherwise a fresh one is minted on each registration.
+        provided = ingress_key or os.environ.get("ASSEMBLY_AGENT_INGRESS_KEY")
+        self.ingress_key = provided
+        self._ingress_explicit = provided is not None
         self.remote_agent_id: Optional[str] = None
 
         # LLM Gateway connection only — auth (ASSEMBLYAI_API_KEY by default) and
@@ -169,20 +173,28 @@ class Agent:
         system_prompt: Optional[str] = None,
         assemblyai_api_key: Optional[str] = None,
         extra: Optional[dict] = None,
+        rotate: bool = True,
     ) -> dict:
         """Point an AssemblyAI agent record's BYO LLM endpoint at ``public_url``
-        (the SDK). Creates the record, or updates it when ``agent_id`` is given.
+        (the SDK), and return the record.
 
         ``public_url`` must be HTTPS/public-DNS (a tunnel or deployed host —
-        localhost is rejected). If no ``ingress_key`` is set yet, one is
-        generated and stored on the record as the LLM ``api_key`` so the
-        endpoint isn't wide open. Returns the agent record (without the key)."""
+        localhost is rejected). Unless you set an explicit ``ingress_key``, a
+        fresh shared secret is minted here (``rotate=True``) and written to the
+        record as the LLM ``api_key`` — a new key per registration.
+
+        The record id is remembered (in ``.assembly_agent.json`` in the working
+        dir, keyed by agent name) so later runs **update the same record** via
+        PUT instead of creating duplicates."""
         from .registry import register_agent
 
-        if not self.ingress_key:
+        if self._ingress_explicit:
+            pass  # respect the user's key, never rotate it
+        elif rotate or not self.ingress_key:
             self.ingress_key = secrets.token_urlsafe(24)
 
         key = assemblyai_api_key or self.api_key or os.environ.get("ASSEMBLYAI_API_KEY", "")
+        aid = agent_id or self.remote_agent_id or _load_remote_id(self.agent_id)
         record = register_agent(
             name=self.name,
             voice=self.voice,
@@ -190,12 +202,14 @@ class Agent:
             model=model or self.model,
             ingress_key=self.ingress_key,
             assemblyai_api_key=key,
-            agent_id=agent_id or self.remote_agent_id,
+            agent_id=aid,
             greeting=self.greeting,
             system_prompt=system_prompt,
             extra=extra,
         )
-        self.remote_agent_id = record.get("id", self.remote_agent_id)
+        self.remote_agent_id = record.get("id") or aid
+        if self.remote_agent_id:
+            _save_remote_id(self.agent_id, self.remote_agent_id)
         return record
 
     def serve(
@@ -206,6 +220,7 @@ class Agent:
         tunnel: bool = True,
         tunnel_provider: str = "auto",
         register: bool = False,
+        agent_id: Optional[str] = None,
         **uvicorn_kwargs: Any,
     ) -> None:
         """Run the OpenAI-compatible server (blocking).
@@ -228,14 +243,19 @@ class Agent:
             uvicorn.run(self.app, host=host, port=port, **uvicorn_kwargs)
             return
 
-        self._serve_with_tunnel(host, port, tunnel_provider, register, uvicorn_kwargs)
+        self._serve_with_tunnel(host, port, tunnel_provider, register, agent_id, uvicorn_kwargs)
 
-    def _serve_with_tunnel(self, host, port, provider, register, uvicorn_kwargs) -> None:
+    def _serve_with_tunnel(self, host, port, provider, register, agent_id, uvicorn_kwargs) -> None:
         import time
 
         import uvicorn
 
         from .tunnel import open_tunnel
+
+        # Mint the rotating ingress key *before* the server starts, so the
+        # endpoint is never open — even in the window before registration.
+        if register and not self._ingress_explicit:
+            self.ingress_key = secrets.token_urlsafe(24)
 
         config = uvicorn.Config(self.app, host=host, port=port, log_level="warning", **uvicorn_kwargs)
         server = uvicorn.Server(config)
@@ -257,9 +277,10 @@ class Agent:
             self._print_banner(f"{tun.url}/v1", public=True, via=tun.provider)
             if register:
                 try:
-                    record = self.register(tun.url)
-                    print(f"  Registered agent record (id: {record.get('id')!r}); "
-                          f"voice layer will call this URL.\n")
+                    # Key already minted above; don't rotate again here.
+                    record = self.register(tun.url, agent_id=agent_id, rotate=False)
+                    print(f"  Agent record set (id: {record.get('id')!r}); the voice "
+                          f"layer will call this URL with a freshly-rotated key.\n")
                 except Exception as exc:  # noqa: BLE001
                     print(f"  Registration failed: {exc}\n")
 
@@ -285,3 +306,29 @@ def _slug(name: str) -> str:
     while "--" in out:
         out = out.replace("--", "-")
     return out.strip("-") or _DEFAULT_MODEL
+
+
+# Remember the AssemblyAI agent-record id across runs (keyed by agent slug), so
+# serve(register=True) updates the same record instead of creating duplicates.
+_REMOTE_ID_FILE = ".assembly_agent.json"
+
+
+def _load_remote_id(slug: str) -> Optional[str]:
+    try:
+        with open(_REMOTE_ID_FILE) as f:
+            return json.load(f).get(slug)
+    except Exception:
+        return None
+
+
+def _save_remote_id(slug: str, remote_id: str) -> None:
+    try:
+        data = {}
+        if os.path.exists(_REMOTE_ID_FILE):
+            with open(_REMOTE_ID_FILE) as f:
+                data = json.load(f)
+        data[slug] = remote_id
+        with open(_REMOTE_ID_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
